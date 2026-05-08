@@ -88,7 +88,7 @@ exe = EXE(
     name='AI_Voice_Studio',
     debug=False,
     strip=False,
-    upx=True,
+    upx=False,
     console=_show_console,
     disable_windowed_traceback=False,
     target_arch=None,
@@ -101,7 +101,7 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name='AI_Voice_Studio',
 )
