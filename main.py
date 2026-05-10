@@ -542,7 +542,10 @@ class AIApp:
         mic_row = tk.Frame(f, bg=CARD); mic_row.pack(fill="x", padx=2, pady=(2,0))
         self._label(mic_row, "Mic:").pack(side="left")
         self.recognizer   = sr.Recognizer()
-        self.mics         = sr.Microphone.list_microphone_names()
+        try:
+            self.mics = sr.Microphone.list_microphone_names()
+        except Exception:
+            self.mics = []
         best_idx          = auto_detect_mic(self.mics)
         self.selected_mic = tk.StringVar(value=self.mics[best_idx] if self.mics else "None")
         ttk.Combobox(mic_row, textvariable=self.selected_mic,
