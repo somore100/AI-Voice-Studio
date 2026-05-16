@@ -50,7 +50,7 @@ Name: "{app}\models\vosk"
 
 [Files]
 ; Main application
-Source: "dist\AI_Voice_Studio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\AI_Voice_Studio.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "logo.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "download_models.py"; DestDir: "{app}"; Flags: ignoreversion
