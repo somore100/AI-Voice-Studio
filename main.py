@@ -26,12 +26,14 @@ import speech_recognition as sr
 _logw("speech_recognition ok")
 import pygame
 _logw("pygame ok")
+_logw(f"BASE dir: {_BASE}")
+_logw("About to create Tk window")
 
 # ──────────────────────────────────────────────────────────────
 #  PERSISTENT CONFIG
 # ──────────────────────────────────────────────────────────────
 LAST_FOLDER     = r"C:/Users/Dominik Žibert/Documents/ai_voice/audio"  # auto-updates on browse
-SAVED_FAVORITES = ['Emma', 'Olivia']  # auto-updates when you star/unstar voices
+SAVED_FAVORITES = ['Ivy', 'Kinsley', 'Leah', 'Lucas', 'Madeline', 'Olivia']  # auto-updates when you star/unstar voices
 
 # ──────────────────────────────────────────────────────────────
 #  MODEL PATHS
@@ -341,7 +343,9 @@ class AIApp:
                             bordercolor=SURFACE, lightcolor=col,
                             darkcolor=col, relief="flat")
 
+        _logw("mixer init")
         pygame.mixer.init()
+        _logw("mixer ok")
         self.favorites    = set(SAVED_FAVORITES)
         self.preview_temp = None
         self.fav_btn      = None
@@ -352,9 +356,13 @@ class AIApp:
         self._scroller.pack(fill="both", expand=True)
         self._inner = self._scroller.inner
 
+        _logw("building models frame")
         self._build_models_frame()
+        _logw("models frame ok")
         self._build_tts_frame()
+        _logw("building stt frame")
         self._build_stt_frame()
+        _logw("stt frame ok")
         self._build_translator_frame()
         self._build_footer()
 
