@@ -26,7 +26,6 @@ import speech_recognition as sr
 _logw("speech_recognition ok")
 import pygame
 _logw("pygame ok")
-_logw(f"BASE dir: {_BASE}")
 _logw("About to create Tk window")
 
 # ──────────────────────────────────────────────────────────────
