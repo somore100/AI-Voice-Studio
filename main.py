@@ -1,14 +1,16 @@
 import os
 import sys
 
-# Early crash logger - writes to app folder before anything else loads
+# Early crash logger
 try:
-    _log_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'startup.log')
+    import sys as _sys
+    _log_dir = os.path.dirname(_sys.executable) if getattr(_sys, 'frozen', False) else os.path.dirname(os.path.realpath(__file__))
+    _log_path = os.path.join(_log_dir, 'startup.log')
     _log = open(_log_path, 'w')
     _log.write('Starting...\n'); _log.flush()
     def _logw(msg):
         _log.write(msg + '\n'); _log.flush()
-except:
+except Exception as _le:
     def _logw(msg): pass
 
 _logw('Python imports starting')
