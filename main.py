@@ -1,15 +1,15 @@
 import os
 import sys
 
-# Early crash logger
+# Early crash logger - write to Desktop which is always writable
 try:
-    import sys as _sys
-    _log_dir = os.path.dirname(_sys.executable) if getattr(_sys, 'frozen', False) else os.path.dirname(os.path.realpath(__file__))
-    _log_path = os.path.join(_log_dir, 'startup.log')
+    import sys as _sys, os as _os
+    _log_path = _os.path.join(_os.path.expanduser('~'), 'Desktop', 'avs_startup.log')
     _log = open(_log_path, 'w')
-    _log.write('Starting...\n'); _log.flush()
+    _log.write('Starting AVS...\n'); _log.flush()
     def _logw(msg):
-        _log.write(msg + '\n'); _log.flush()
+        _log.write(str(msg) + '\n'); _log.flush()
+    _logw('Logger started')
 except Exception as _le:
     def _logw(msg): pass
 
