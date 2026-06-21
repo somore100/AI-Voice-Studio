@@ -39,7 +39,16 @@ SAVED_FAVORITES = ['Ivy', 'Kinsley', 'Leah', 'Lucas', 'Madeline', 'Olivia']  # a
 # ──────────────────────────────────────────────────────────────
 #  MODEL PATHS
 # ──────────────────────────────────────────────────────────────
-_BASE             = os.path.dirname(os.path.realpath(__file__))
+_logw("Setting _BASE")
+try:
+    if getattr(sys, 'frozen', False):
+        _BASE = os.path.dirname(sys.executable)
+    else:
+        _BASE = os.path.dirname(os.path.realpath(__file__))
+    _logw(f"_BASE = {_BASE}")
+except Exception as _be:
+    _logw(f"_BASE ERROR: {_be}")
+    _BASE = os.getcwd()
 
 # Set espeak path if bundled with app (Windows installer bundles it)
 _ESPEAK_PATH = os.path.join(_BASE, "espeak")
