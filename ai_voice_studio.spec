@@ -83,10 +83,8 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='AI_Voice_Studio',
     debug=False,
     strip=False,
@@ -95,4 +93,15 @@ exe = EXE(
     disable_windowed_traceback=False,
     target_arch=None,
     icon='logo.ico',
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='AI_Voice_Studio',
 )

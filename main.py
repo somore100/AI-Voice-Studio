@@ -1,21 +1,8 @@
 import os
 import sys
 
-# Early crash logger - write to Desktop which is always writable
-try:
-    import sys as _sys, os as _os
-    _log_path = _os.path.join(_os.path.expanduser('~'), 'Desktop', 'avs_startup.log')
-    _log = open(_log_path, 'w')
-    _log.write('Starting AVS...\n'); _log.flush()
-    def _logw(msg):
-        _log.write(str(msg) + '\n'); _log.flush()
-    _logw('Logger started')
-except Exception as _le:
-    def _logw(msg): pass
 
-_logw('Python imports starting')
 import tkinter as tk
-_logw('tkinter ok')
 from tkinter import messagebox, ttk, filedialog
 import threading
 import random
@@ -25,10 +12,7 @@ import urllib.request
 import urllib.parse
 import json
 import speech_recognition as sr
-_logw("speech_recognition ok")
 import pygame
-_logw("pygame ok")
-_logw("About to create Tk window")
 
 # ──────────────────────────────────────────────────────────────
 #  PERSISTENT CONFIG
@@ -39,16 +23,13 @@ SAVED_FAVORITES = ['Ivy', 'Kinsley', 'Leah', 'Lucas', 'Madeline', 'Olivia']  # a
 # ──────────────────────────────────────────────────────────────
 #  MODEL PATHS
 # ──────────────────────────────────────────────────────────────
-_logw("Setting _BASE")
 try:
     if getattr(sys, 'frozen', False):
         _BASE = os.path.dirname(sys.executable)
     else:
         _BASE = os.path.dirname(os.path.realpath(__file__))
-    _logw(f"_BASE = {_BASE}")
-except Exception as _be:
-    _logw(f"_BASE ERROR: {_be}")
-    _BASE = os.getcwd()
+    except Exception as _be:
+        _BASE = os.getcwd()
 
 # Set espeak path if bundled with app (Windows installer bundles it)
 _ESPEAK_PATH = os.path.join(_BASE, "espeak")
@@ -353,10 +334,8 @@ class AIApp:
                             bordercolor=SURFACE, lightcolor=col,
                             darkcolor=col, relief="flat")
 
-        _logw("mixer init")
-        pygame.mixer.init()
-        _logw("mixer ok")
-        self.favorites    = set(SAVED_FAVORITES)
+                pygame.mixer.init()
+                self.favorites    = set(SAVED_FAVORITES)
         self.preview_temp = None
         self.fav_btn      = None
         self.fav_status   = None
@@ -366,14 +345,10 @@ class AIApp:
         self._scroller.pack(fill="both", expand=True)
         self._inner = self._scroller.inner
 
-        _logw("building models frame")
-        self._build_models_frame()
-        _logw("models frame ok")
-        self._build_tts_frame()
-        _logw("building stt frame")
-        self._build_stt_frame()
-        _logw("stt frame ok")
-        self._build_translator_frame()
+                self._build_models_frame()
+                self._build_tts_frame()
+                self._build_stt_frame()
+                self._build_translator_frame()
         self._build_footer()
 
         root.after(150, lambda: self._scroller.bind_all_mousewheel(self._inner))
@@ -1222,11 +1197,9 @@ AIApp._do_download_one       = _do_download_one
 AIApp._do_download_model     = _do_download_model
 
 if __name__ == "__main__":
-    _logw("Starting UI")
-    try:
+        try:
         root = tk.Tk()
-        _logw("Tk created")
-        app  = AIApp(root)
+                app  = AIApp(root)
         root.mainloop()
     except Exception as e:
         import traceback
