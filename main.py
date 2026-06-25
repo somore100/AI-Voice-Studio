@@ -28,8 +28,8 @@ try:
         _BASE = os.path.dirname(sys.executable)
     else:
         _BASE = os.path.dirname(os.path.realpath(__file__))
-    except Exception as _be:
-        _BASE = os.getcwd()
+except Exception:
+    _BASE = os.getcwd()
 
 # Set espeak path if bundled with app (Windows installer bundles it)
 _ESPEAK_PATH = os.path.join(_BASE, "espeak")
