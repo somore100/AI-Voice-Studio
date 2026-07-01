@@ -334,8 +334,8 @@ class AIApp:
                             bordercolor=SURFACE, lightcolor=col,
                             darkcolor=col, relief="flat")
 
-                pygame.mixer.init()
-                self.favorites    = set(SAVED_FAVORITES)
+        pygame.mixer.init()
+        self.favorites    = set(SAVED_FAVORITES)
         self.preview_temp = None
         self.fav_btn      = None
         self.fav_status   = None
