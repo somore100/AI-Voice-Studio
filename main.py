@@ -27,8 +27,8 @@ _ESPEAK_PATH = os.path.join(_BASE, "espeak")
 if os.path.isdir(_ESPEAK_PATH):
     os.environ["PHONEMIZER_ESPEAK_PATH"] = _ESPEAK_PATH
     os.environ["ESPEAK_DATA_PATH"]       = os.path.join(_ESPEAK_PATH, "espeak-ng-data")
-VCTK_MODEL_PATH   = os.path.join(_BASE, "models", "vctk")
-XTTS_MODEL_PATH   = os.path.join(_BASE, "models", "xtts_v2")
+VCTK_MODEL_PATH   = os.path.join(_MODELS_BASE, "vctk")
+XTTS_MODEL_PATH   = os.path.join(_MODELS_BASE, "xtts_v2")
 WHISPER_MODEL_DIR = os.path.join(_BASE, "models", "whisper")
 VOSK_MODEL_DIR    = os.path.join(_BASE, "models", "vosk")
 
@@ -765,12 +765,12 @@ class AIApp:
         for pkg, key in [("TTS","tts_pkg"),("openai_whisper","whisper_pkg"),("vosk","vosk_pkg")]:
             ok = check_pkg_fast(pkg)
             upd(key, "ok" if ok else "missing", "Installed" if ok else "MISSING")
-        whisper_ok = os.path.isfile(os.path.join(_BASE, "models", "whisper", "small.pt"))
+        whisper_ok = os.path.isfile(os.path.join(_MODELS_BASE, "whisper", "small.pt"))
         upd("whisper", "ok" if whisper_ok else "missing", "Ready" if whisper_ok else "MISSING")
-        vctk_path = os.path.join(_BASE, "models", "vctk")
+        vctk_path = os.path.join(_MODELS_BASE, "vctk")
         vctk_ok = os.path.isdir(vctk_path) and len(os.listdir(vctk_path)) > 0
         upd("vctk", "ok" if vctk_ok else "missing", "Ready" if vctk_ok else "MISSING")
-        xtts_path = os.path.join(_BASE, "models", "xtts_v2")
+        xtts_path = os.path.join(_MODELS_BASE, "xtts_v2")
         xtts_ok = os.path.isdir(xtts_path) and len(os.listdir(xtts_path)) > 0
         upd("xtts", "ok" if xtts_ok else "missing", "Ready" if xtts_ok else "MISSING")
 
@@ -1179,17 +1179,17 @@ def _do_check_models(self):
 
     # Check models in APP folder only
     upd("whisper", "checking", "Checking...")
-    whisper_ok = os.path.isfile(os.path.join(_BASE, "models", "whisper", "small.pt"))
+    whisper_ok = os.path.isfile(os.path.join(_MODELS_BASE, "whisper", "small.pt"))
     upd("whisper", "ok" if whisper_ok else "missing",
         "Ready" if whisper_ok else "MISSING")
 
     upd("vctk", "checking", "Checking...")
-    vctk_ok = os.path.isdir(os.path.join(_BASE, "models", "vctk")) and               len(os.listdir(os.path.join(_BASE, "models", "vctk"))) > 0
+    vctk_ok = os.path.isdir(os.path.join(_MODELS_BASE, "vctk")) and               len(os.listdir(os.path.join(_MODELS_BASE, "vctk"))) > 0
     upd("vctk", "ok" if vctk_ok else "missing",
         "Ready" if vctk_ok else "MISSING")
 
     upd("xtts", "checking", "Checking...")
-    xtts_ok = os.path.isdir(os.path.join(_BASE, "models", "xtts_v2")) and               len(os.listdir(os.path.join(_BASE, "models", "xtts_v2"))) > 0
+    xtts_ok = os.path.isdir(os.path.join(_MODELS_BASE, "xtts_v2")) and               len(os.listdir(os.path.join(_MODELS_BASE, "xtts_v2"))) > 0
     upd("xtts", "ok" if xtts_ok else "missing",
         "Ready" if xtts_ok else "MISSING")
 
@@ -1409,7 +1409,7 @@ def _do_check_models(self):
 
     # Whisper model
     self.root.after(0, lambda: self._set_model_status("whisper", None))
-    whisper_local = os.path.join(_BASE, "models", "whisper", "small.pt")
+    whisper_local = os.path.join(_MODELS_BASE, "whisper", "small.pt")
     whisper_cache = os.path.join(os.path.expanduser("~"), ".cache", "whisper", "small.pt")
     ok = os.path.isfile(whisper_local) or os.path.isfile(whisper_cache)
     self.root.after(0, lambda o=ok: self._set_model_status("whisper", o,
@@ -1417,7 +1417,7 @@ def _do_check_models(self):
 
     # VCTK
     self.root.after(0, lambda: self._set_model_status("vctk", None))
-    vctk_local = os.path.join(_BASE, "models", "vctk")
+    vctk_local = os.path.join(_MODELS_BASE, "vctk")
     lad = os.environ.get("LOCALAPPDATA", "")
     tts_cache = os.path.join(lad, "tts")
     vctk_cached = os.path.isdir(tts_cache) and any(
@@ -1428,7 +1428,7 @@ def _do_check_models(self):
 
     # XTTS
     self.root.after(0, lambda: self._set_model_status("xtts", None))
-    xtts_local = os.path.join(_BASE, "models", "xtts_v2")
+    xtts_local = os.path.join(_MODELS_BASE, "xtts_v2")
     xtts_cached = os.path.isdir(tts_cache) and any(
         "xtts_v2" in d for d in os.listdir(tts_cache))
     ok = os.path.isdir(xtts_local) or xtts_cached
