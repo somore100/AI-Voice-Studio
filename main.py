@@ -20,7 +20,18 @@ SAVED_FAVORITES = ['Adam', 'Emma', 'Ivy']  # auto-updates when you star/unstar v
 # ──────────────────────────────────────────────────────────────
 #  MODEL PATHS
 # ──────────────────────────────────────────────────────────────
-_BASE             = os.path.dirname(os.path.realpath(__file__))
+if getattr(sys, 'frozen', False):
+    _BASE = os.path.dirname(sys.executable)
+else:
+    _BASE = os.path.dirname(os.path.realpath(__file__))
+
+# Store models in AppData on Windows (Program Files is read-only)
+_APPDATA = os.environ.get('APPDATA', '')
+if _APPDATA and getattr(sys, 'frozen', False):
+    _MODELS_BASE = os.path.join(_APPDATA, 'AI Voice Studio', 'models')
+else:
+    _MODELS_BASE = os.path.join(_BASE, 'models')
+os.makedirs(_MODELS_BASE, exist_ok=True)
 
 # Set espeak path if bundled with app (Windows installer bundles it)
 _ESPEAK_PATH = os.path.join(_BASE, "espeak")
