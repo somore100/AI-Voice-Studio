@@ -87,9 +87,3 @@ WelcomeLabel2=Version {#AppVersion} by {#AppPublisher}%n%nFully offline text-to-
 FinishedLabel=AI Voice Studio has been installed!%n%nDesktop shortcut "Local TTS" has been created.%n%nClick Finish to close.
 
 [Code]
-function PrepareToInstall(var NeedsRestart: Boolean): String;
-begin
-  Result := '';
-  if not DirExists(ExpandConstant('{src}\dist\AI_Voice_Studio')) then
-    Result := 'Application not built. Run BuildManager.exe first.';
-end;

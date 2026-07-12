@@ -66,6 +66,7 @@ a = Analysis(
         'torch', 'torchaudio',
         'numpy', 'librosa', 'scipy', 'sklearn',
         'tkinter', 'tkinter.ttk', 'tkinter.filedialog', 'tkinter.messagebox',
+        'backports', 'backports.tarfile', 'jaraco', 'jaraco.text', 'jaraco.context', 'jaraco.functools',
     ],
     hookspath=[],
     runtime_hooks=['hook_vosk.py'],
