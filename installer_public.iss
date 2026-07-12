@@ -39,7 +39,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "Create desktop shortcut (named ""Local TTS"")"; GroupDescription: "Shortcuts:"
 Name: "startmenu"; Description: "Add to Start Menu"; GroupDescription: "Shortcuts:"
-Name: "install_models"; Description: "Download basic AI models now (Whisper STT ~150MB + VCTK voices ~100MB) - requires internet"; GroupDescription: "AI Models:"; Flags: checked
+Name: "install_models"; Description: "Download basic AI models now (Whisper STT ~150MB + VCTK voices ~100MB) - requires internet"; GroupDescription: "AI Models:"
 Name: "install_xtts"; Description: "Also download multilingual voices XTTS-v2 (~2GB) - optional, for Slovenian/Russian etc"; GroupDescription: "AI Models:"
 
 [Dirs]
