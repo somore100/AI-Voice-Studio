@@ -17,7 +17,7 @@ AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
 AppPublisherURL={#AppURL}
-DefaultDirName={autopf64}\AI Voice Studio
+DefaultDirName={autopf}\AI Voice Studio
 DefaultGroupName={#AppName}
 AllowNoIcons=yes
 OutputDir=setup_output
@@ -39,6 +39,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "Create desktop shortcut (named ""Local TTS"")"; GroupDescription: "Shortcuts:"
 Name: "startmenu"; Description: "Add to Start Menu"; GroupDescription: "Shortcuts:"
+Name: "install_models"; Description: "Download basic AI models now (Whisper STT ~150MB + VCTK voices ~100MB) - requires internet"; GroupDescription: "AI Models:"; Flags: checked
+Name: "install_xtts"; Description: "Also download multilingual voices XTTS-v2 (~2GB) - optional, for Slovenian/Russian etc"; GroupDescription: "AI Models:"
 
 [Dirs]
 Name: "{app}"
@@ -63,20 +65,17 @@ Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 Name: "{commondesktop}\{#AppShortName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\logo.ico"; Tasks: desktopicon
 
 [Run]
-; Install Visual C++ 2015-2022 Redistributable (required by PyTorch/Python)
-Filename: "{app}\python\python.exe"; Parameters: "-c ""import urllib.request; urllib.request.urlretrieve('https://aka.ms/vs/17/release/vc_redist.x64.exe', r'{tmp}\vc_redist.exe')"""; StatusMsg: "Downloading Visual C++ Runtime..."; Flags: runhidden waituntilterminated
-Filename: "{tmp}\vc_redist.exe"; Parameters: "/quiet /norestart"; StatusMsg: "Installing Visual C++ Runtime..."; Flags: waituntilterminated
-
-; Install Visual C++ 2015-2022 Redistributable (required by PyTorch/Python)
-Filename: "{app}\python\python.exe"; Parameters: "-c ""import urllib.request; urllib.request.urlretrieve('https://aka.ms/vs/17/release/vc_redist.x64.exe', r'{tmp}\vc_redist.exe')"""; StatusMsg: "Downloading Visual C++ Runtime..."; Flags: runhidden waituntilterminated
-Filename: "{tmp}\vc_redist.exe"; Parameters: "/quiet /norestart"; StatusMsg: "Installing Visual C++ Runtime..."; Flags: waituntilterminated
-
 ; Use bundled Python to install packages and download models
 Filename: "{app}\python\python.exe"; Parameters: "-m pip install TTS openai-whisper vosk pygame SpeechRecognition PyAudio numpy librosa"; StatusMsg: "Installing packages..."; Flags: runhidden waituntilterminated
 Filename: "{app}\python\python.exe"; Parameters: "-m pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu"; StatusMsg: "Installing PyTorch (large download)..."; Flags: runhidden waituntilterminated
 Filename: "{app}\python\python.exe"; Parameters: """{app}\download_models.py"" --whisper"; StatusMsg: "Downloading Whisper model (~150MB)..."; Flags: runhidden waituntilterminated
 Filename: "{app}\python\python.exe"; Parameters: """{app}\download_models.py"" --vctk"; StatusMsg: "Downloading English voices (~100MB)..."; Flags: runhidden waituntilterminated
 Filename: "{app}\python\python.exe"; Parameters: """{app}\download_models.py"" --xtts"; StatusMsg: "Downloading multilingual voices (~2GB)..."; Flags: runhidden waituntilterminated
+; Download basic models if selected
+Filename: "{app}\python\python.exe"; Parameters: """{app}\download_models.py"" --whisper --vctk"; StatusMsg: "Downloading basic AI models (Whisper + VCTK, ~250MB)..."; WorkingDir: "{app}"; Flags: runhidden waituntilterminated; Tasks: install_models
+; Download XTTS if selected  
+Filename: "{app}\python\python.exe"; Parameters: """{app}\download_models.py"" --xtts"; StatusMsg: "Downloading multilingual voices (~2GB, this takes a while)..."; WorkingDir: "{app}"; Flags: runhidden waituntilterminated; Tasks: install_xtts
+
 Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName} now"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
@@ -88,3 +87,9 @@ WelcomeLabel2=Version {#AppVersion} by {#AppPublisher}%n%nFully offline text-to-
 FinishedLabel=AI Voice Studio has been installed!%n%nDesktop shortcut "Local TTS" has been created.%n%nClick Finish to close.
 
 [Code]
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := '';
+  if not DirExists(ExpandConstant('{src}\dist\AI_Voice_Studio')) then
+    Result := 'Application not built. Run BuildManager.exe first.';
+end;

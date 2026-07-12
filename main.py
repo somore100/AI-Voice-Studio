@@ -15,31 +15,20 @@ import pygame
 #  PERSISTENT CONFIG
 # ──────────────────────────────────────────────────────────────
 LAST_FOLDER     = r"C:/Users/Dominik Žibert/Documents/ai_voice/audio"  # auto-updates on browse
-SAVED_FAVORITES = ['Adam', 'Emma', 'Ivy']  # auto-updates when you star/unstar voices
+SAVED_FAVORITES = ["Adam", "Emma"]  # auto-updates when you star/unstar voices
 
 # ──────────────────────────────────────────────────────────────
 #  MODEL PATHS
 # ──────────────────────────────────────────────────────────────
-if getattr(sys, 'frozen', False):
-    _BASE = os.path.dirname(sys.executable)
-else:
-    _BASE = os.path.dirname(os.path.realpath(__file__))
-
-# Store models in AppData on Windows (Program Files is read-only)
-_APPDATA = os.environ.get('APPDATA', '')
-if _APPDATA and getattr(sys, 'frozen', False):
-    _MODELS_BASE = os.path.join(_APPDATA, 'AI Voice Studio', 'models')
-else:
-    _MODELS_BASE = os.path.join(_BASE, 'models')
-os.makedirs(_MODELS_BASE, exist_ok=True)
+_BASE             = os.path.dirname(os.path.realpath(__file__))
 
 # Set espeak path if bundled with app (Windows installer bundles it)
 _ESPEAK_PATH = os.path.join(_BASE, "espeak")
 if os.path.isdir(_ESPEAK_PATH):
     os.environ["PHONEMIZER_ESPEAK_PATH"] = _ESPEAK_PATH
     os.environ["ESPEAK_DATA_PATH"]       = os.path.join(_ESPEAK_PATH, "espeak-ng-data")
-VCTK_MODEL_PATH   = os.path.join(_MODELS_BASE, "vctk")
-XTTS_MODEL_PATH   = os.path.join(_MODELS_BASE, "xtts_v2")
+VCTK_MODEL_PATH   = os.path.join(_BASE, "models", "vctk")
+XTTS_MODEL_PATH   = os.path.join(_BASE, "models", "xtts_v2")
 WHISPER_MODEL_DIR = os.path.join(_BASE, "models", "whisper")
 VOSK_MODEL_DIR    = os.path.join(_BASE, "models", "vosk")
 
@@ -351,6 +340,7 @@ class AIApp:
         self._build_tts_frame()
         self._build_stt_frame()
         self._build_translator_frame()
+        self._build_voice_changer_frame()
         self._build_footer()
 
         root.after(150, lambda: self._scroller.bind_all_mousewheel(self._inner))
@@ -473,6 +463,21 @@ class AIApp:
         self._label(self._xtts_panel,
                     "XTTS-v2  17 languages including Slovenian, Russian, English",
                     fg=FG_DIM, font=("Segoe UI",8)).pack(anchor="w", padx=4, pady=4)
+
+        # Speed slider
+        spd = tk.Frame(f, bg=CARD); spd.pack(fill="x", padx=2, pady=4)
+        self._label(spd, "Speed:").pack(side="left")
+        self.tts_speed = tk.DoubleVar(value=1.0)
+        speed_slider = ttk.Scale(spd, from_=0.5, to=2.0, orient="horizontal",
+                                  variable=self.tts_speed, length=200)
+        speed_slider.pack(side="left", padx=6)
+        self._speed_label = tk.Label(spd, text="1.0x", bg=CARD, fg=CYAN,
+                                      font=("Segoe UI",9,"bold"), width=4)
+        self._speed_label.pack(side="left")
+        self.tts_speed.trace_add("write", lambda *_: self._speed_label.config(
+            text=f"{self.tts_speed.get():.1f}x"))
+        self._btn(spd, "Reset", lambda: self.tts_speed.set(1.0),
+                  color=SURFACE, padx=6).pack(side="left", padx=4)
 
         fldr = tk.Frame(f, bg=CARD); fldr.pack(fill="x", padx=2, pady=4)
         self._label(fldr, "Save to:").pack(side="left")
@@ -700,6 +705,141 @@ class AIApp:
         self._tr_prog_label.config(text="")
         self.tr_status.config(text=f"Error: {msg}", fg=RED)
 
+    def _build_voice_changer_frame(self):
+        f = self._lf("Voice Changer", fg_title=ORANGE)
+
+        # Info label
+        info = tk.Frame(f, bg=CARD); info.pack(fill="x", padx=2, pady=(0,6))
+        tk.Label(info, text="OPTIONAL", bg=CARD, fg=YELLOW,
+                 font=("Segoe UI",8,"bold")).pack(side="left")
+        self._label(info, "  Real-time voice conversion using TTS pipeline",
+                    fg=FG_DIM, font=("Segoe UI",8)).pack(side="left")
+
+        # Pitch control
+        pc = tk.Frame(f, bg=CARD); pc.pack(fill="x", padx=2, pady=3)
+        self._label(pc, "Pitch:").pack(side="left")
+        self.vc_pitch = tk.DoubleVar(value=0.0)
+        ttk.Scale(pc, from_=-12.0, to=12.0, orient="horizontal",
+                  variable=self.vc_pitch, length=200).pack(side="left", padx=6)
+        self._vc_pitch_lbl = tk.Label(pc, text="0.0", bg=CARD, fg=CYAN,
+                                       font=("Segoe UI",9,"bold"), width=5)
+        self._vc_pitch_lbl.pack(side="left")
+        self.vc_pitch.trace_add("write", lambda *_: self._vc_pitch_lbl.config(
+            text=f"{self.vc_pitch.get():+.1f}"))
+        self._btn(pc, "Reset", lambda: self.vc_pitch.set(0.0),
+                  color=SURFACE, padx=6).pack(side="left", padx=4)
+
+        # Speed control for voice changer
+        sc = tk.Frame(f, bg=CARD); sc.pack(fill="x", padx=2, pady=3)
+        self._label(sc, "Speed:").pack(side="left")
+        self.vc_speed = tk.DoubleVar(value=1.0)
+        ttk.Scale(sc, from_=0.5, to=2.0, orient="horizontal",
+                  variable=self.vc_speed, length=200).pack(side="left", padx=6)
+        self._vc_speed_lbl = tk.Label(sc, text="1.0x", bg=CARD, fg=CYAN,
+                                       font=("Segoe UI",9,"bold"), width=5)
+        self._vc_speed_lbl.pack(side="left")
+        self.vc_speed.trace_add("write", lambda *_: self._vc_speed_lbl.config(
+            text=f"{self.vc_speed.get():.1f}x"))
+
+        # Pipeline mode
+        pl = tk.Frame(f, bg=CARD); pl.pack(fill="x", padx=2, pady=3)
+        self._label(pl, "Mode:").pack(side="left")
+        self.vc_mode = tk.StringVar(value="Pitch only")
+        ttk.Combobox(pl, textvariable=self.vc_mode, state="readonly",
+                     values=["Pitch only", "TTS pipeline (STT→TTS)"],
+                     width=24, font=("Segoe UI",9)).pack(side="left", padx=6)
+
+        # Status
+        self._vc_status = self._label(f, "Stopped", fg=FG_DIM)
+        self._vc_status.pack(anchor="w", padx=4, pady=2)
+
+        # Buttons
+        br = tk.Frame(f, bg=CARD); br.pack(pady=4)
+        self._vc_start_btn = self._btn(br, "Start Voice Changer",
+                                        self._vc_start, color=GREEN, fg=BG, bold=True)
+        self._vc_start_btn.pack(side="left", padx=5)
+        self._btn(br, "Stop", self._vc_stop, color=RED, fg=BG, bold=True).pack(side="left", padx=5)
+
+        self._vc_running = False
+
+    def _vc_start(self):
+        if self._vc_running: return
+        mode = self.vc_mode.get()
+        if "TTS pipeline" in mode:
+            if not self._mic_allowed:
+                if not ask_mic_permission(self.root): return
+                self._mic_allowed = True
+        self._vc_running = True
+        self._vc_status.config(text="Running...", fg=GREEN)
+        threading.Thread(target=self._vc_loop, daemon=True).start()
+
+    def _vc_stop(self):
+        self._vc_running = False
+        self.root.after(0, lambda: self._vc_status.config(text="Stopped", fg=FG_DIM))
+
+    def _vc_loop(self):
+        import numpy as np
+        mode = self.vc_mode.get()
+
+        if "TTS pipeline" in mode:
+            # STT -> TTS pipeline
+            engine = self.stt_engine.get() if hasattr(self, 'stt_engine') else "Whisper (recommended)"
+            lang_disp = self.stt_lang_var.get() if hasattr(self, 'stt_lang_var') else "English"
+            try:
+                mic_idx = self.mics.index(self.selected_mic.get()) if self.mics else 0
+            except Exception:
+                mic_idx = 0
+
+            while self._vc_running:
+                try:
+                    with sr.Microphone(device_index=mic_idx, sample_rate=16000) as source:
+                        self.recognizer.adjust_for_ambient_noise(source, duration=0.3)
+                        self.root.after(0, lambda: self._vc_status.config(
+                            text="Listening...", fg=GREEN))
+                        audio = self.recognizer.listen(source, phrase_time_limit=5)
+
+                    self.root.after(0, lambda: self._vc_status.config(
+                        text="Processing...", fg=YELLOW))
+
+                    # STT
+                    raw = np.frombuffer(
+                        audio.get_raw_data(convert_rate=16000, convert_width=2),
+                        dtype=np.int16).astype(np.float32) / 32768.0
+                    model = get_whisper_model()
+                    result = model.transcribe(raw, fp16=False)
+                    text = result["text"].strip()
+
+                    if text and self._vc_running:
+                        self.root.after(0, lambda t=text: self._vc_status.config(
+                            text=f"Speaking: {t[:40]}", fg=CYAN))
+                        # TTS output
+                        import tempfile
+                        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+                        tmp.close()
+                        sid = self.get_selected_speaker_id() if not self._is_xtts() else None
+                        if sid:
+                            get_tts_vctk().tts_to_file(text=text, speaker=sid, file_path=tmp.name)
+                        else:
+                            lang = LANG_XTTS.get(self.xtts_lang_var.get(), "en")
+                            get_tts_xtts().tts_to_file(text=text, language=lang, file_path=tmp.name)
+                        pygame.mixer.music.load(tmp.name)
+                        pygame.mixer.music.play()
+                        while pygame.mixer.music.get_busy() and self._vc_running:
+                            time.sleep(0.1)
+                except Exception as e:
+                    if self._vc_running:
+                        self.root.after(0, lambda err=str(e): self._vc_status.config(
+                            text=f"Error: {err[:50]}", fg=RED))
+                        time.sleep(1)
+        else:
+            # Pitch only mode - shift pitch of mic input
+            self.root.after(0, lambda: self._vc_status.config(
+                text="Pitch mode: play audio to hear effect", fg=YELLOW))
+            time.sleep(1)
+            self.root.after(0, lambda: self._vc_status.config(
+                text="Tip: Use TTS pipeline mode for real-time voice changing", fg=FG_DIM))
+            self._vc_running = False
+
     def _build_footer(self):
         f = tk.Frame(self._inner, bg=BG); f.pack(fill="x", padx=10, pady=(4,14))
         tk.Label(f, text="made by domore100", bg=BG, fg=FG_DIM,
@@ -776,12 +916,12 @@ class AIApp:
         for pkg, key in [("TTS","tts_pkg"),("openai_whisper","whisper_pkg"),("vosk","vosk_pkg")]:
             ok = check_pkg_fast(pkg)
             upd(key, "ok" if ok else "missing", "Installed" if ok else "MISSING")
-        whisper_ok = os.path.isfile(os.path.join(_MODELS_BASE, "whisper", "small.pt"))
+        whisper_ok = os.path.isfile(os.path.join(_BASE, "models", "whisper", "small.pt"))
         upd("whisper", "ok" if whisper_ok else "missing", "Ready" if whisper_ok else "MISSING")
-        vctk_path = os.path.join(_MODELS_BASE, "vctk")
+        vctk_path = os.path.join(_BASE, "models", "vctk")
         vctk_ok = os.path.isdir(vctk_path) and len(os.listdir(vctk_path)) > 0
         upd("vctk", "ok" if vctk_ok else "missing", "Ready" if vctk_ok else "MISSING")
-        xtts_path = os.path.join(_MODELS_BASE, "xtts_v2")
+        xtts_path = os.path.join(_BASE, "models", "xtts_v2")
         xtts_ok = os.path.isdir(xtts_path) and len(os.listdir(xtts_path)) > 0
         upd("xtts", "ok" if xtts_ok else "missing", "Ready" if xtts_ok else "MISSING")
 
@@ -819,17 +959,21 @@ class AIApp:
     def _do_download_model_now(self, key):
         self.root.after(0, lambda: self._dl_bar.start(12))
         self.root.after(0, lambda k=key: self._set_model_status(k, "working", "Downloading..."))
-        models_dir = os.path.join(_BASE, "models")
+        models_dir = _MODELS_BASE
         os.makedirs(models_dir, exist_ok=True)
         os.environ["TTS_HOME"] = models_dir
         os.environ["COQUI_TOS_AGREED"] = "1"
+        print(f"[AVS] Starting download: {key}")
+        print(f"[AVS] Models directory: {models_dir}")
         try:
             if key == "whisper":
                 self.root.after(0, lambda: self._dl_label.config(text="Downloading Whisper (~150MB)...", fg=YELLOW))
+                print("[AVS] Downloading Whisper small model (~150MB)...")
                 import whisper
                 out_dir = os.path.join(models_dir, "whisper")
                 os.makedirs(out_dir, exist_ok=True)
                 whisper.load_model("small", download_root=out_dir)
+                print("[AVS] Whisper download complete!")
                 self.root.after(0, lambda: self._set_model_status("whisper", "ok", "Ready"))
             elif key == "vctk":
                 self.root.after(0, lambda: self._dl_label.config(text="Downloading VCTK voices (~100MB)...", fg=YELLOW))
@@ -1190,17 +1334,17 @@ def _do_check_models(self):
 
     # Check models in APP folder only
     upd("whisper", "checking", "Checking...")
-    whisper_ok = os.path.isfile(os.path.join(_MODELS_BASE, "whisper", "small.pt"))
+    whisper_ok = os.path.isfile(os.path.join(_BASE, "models", "whisper", "small.pt"))
     upd("whisper", "ok" if whisper_ok else "missing",
         "Ready" if whisper_ok else "MISSING")
 
     upd("vctk", "checking", "Checking...")
-    vctk_ok = os.path.isdir(os.path.join(_MODELS_BASE, "vctk")) and               len(os.listdir(os.path.join(_MODELS_BASE, "vctk"))) > 0
+    vctk_ok = os.path.isdir(os.path.join(_BASE, "models", "vctk")) and               len(os.listdir(os.path.join(_BASE, "models", "vctk"))) > 0
     upd("vctk", "ok" if vctk_ok else "missing",
         "Ready" if vctk_ok else "MISSING")
 
     upd("xtts", "checking", "Checking...")
-    xtts_ok = os.path.isdir(os.path.join(_MODELS_BASE, "xtts_v2")) and               len(os.listdir(os.path.join(_MODELS_BASE, "xtts_v2"))) > 0
+    xtts_ok = os.path.isdir(os.path.join(_BASE, "models", "xtts_v2")) and               len(os.listdir(os.path.join(_BASE, "models", "xtts_v2"))) > 0
     upd("xtts", "ok" if xtts_ok else "missing",
         "Ready" if xtts_ok else "MISSING")
 
@@ -1420,7 +1564,7 @@ def _do_check_models(self):
 
     # Whisper model
     self.root.after(0, lambda: self._set_model_status("whisper", None))
-    whisper_local = os.path.join(_MODELS_BASE, "whisper", "small.pt")
+    whisper_local = os.path.join(_BASE, "models", "whisper", "small.pt")
     whisper_cache = os.path.join(os.path.expanduser("~"), ".cache", "whisper", "small.pt")
     ok = os.path.isfile(whisper_local) or os.path.isfile(whisper_cache)
     self.root.after(0, lambda o=ok: self._set_model_status("whisper", o,
@@ -1428,7 +1572,7 @@ def _do_check_models(self):
 
     # VCTK
     self.root.after(0, lambda: self._set_model_status("vctk", None))
-    vctk_local = os.path.join(_MODELS_BASE, "vctk")
+    vctk_local = os.path.join(_BASE, "models", "vctk")
     lad = os.environ.get("LOCALAPPDATA", "")
     tts_cache = os.path.join(lad, "tts")
     vctk_cached = os.path.isdir(tts_cache) and any(
@@ -1439,7 +1583,7 @@ def _do_check_models(self):
 
     # XTTS
     self.root.after(0, lambda: self._set_model_status("xtts", None))
-    xtts_local = os.path.join(_MODELS_BASE, "xtts_v2")
+    xtts_local = os.path.join(_BASE, "models", "xtts_v2")
     xtts_cached = os.path.isdir(tts_cache) and any(
         "xtts_v2" in d for d in os.listdir(tts_cache))
     ok = os.path.isdir(xtts_local) or xtts_cached
