@@ -942,26 +942,47 @@ class AIApp:
     def _do_download_all_missing(self):
         self.root.after(0, lambda: self._dl_bar.start(12))
         import subprocess, sys as _sys
+
+        def log(msg):
+            print(f"[AVS] {msg}")
+            self.root.after(0, lambda m=msg: self._dl_label.config(text=m, fg=YELLOW))
+
         pkg_map = {
-            "tts_pkg":    ["TTS"],
-            "whisper_pkg":["openai-whisper"],
-            "vosk_pkg":   ["vosk"],
+            "tts_pkg":    (["TTS"],            "Coqui TTS engine"),
+            "whisper_pkg":(["openai-whisper"], "Whisper STT"),
+            "vosk_pkg":   (["vosk"],           "Vosk STT"),
         }
-        for key, pip_args in pkg_map.items():
+
+        # Install packages first, one by one
+        for key, (pip_args, desc) in pkg_map.items():
             status, _ = self._model_rows[key]
             if status.cget("text") == "MISSING":
+                log(f"Installing {desc}...")
                 self.root.after(0, lambda k=key: self._set_model_status(k, "working", "Installing..."))
                 r = subprocess.run([_sys.executable, "-m", "pip", "install"] + pip_args,
                                    capture_output=True, text=True)
                 ok = r.returncode == 0
+                log(f"{desc}: {'OK' if ok else 'FAILED'}")
+                if not ok:
+                    print(f"[AVS] pip error: {r.stderr[-300:]}")
                 self.root.after(0, lambda k=key, o=ok: self._set_model_status(
                     k, "ok" if o else "missing", "Installed" if o else "FAILED"))
+
+        # Download models one by one
+        model_names = {
+            "whisper": "Whisper STT model (~150MB)",
+            "vctk":    "VCTK English voices (~100MB)",
+            "xtts":    "XTTS-v2 multilingual voices (~2GB)",
+        }
         for key in ["whisper", "vctk", "xtts"]:
             status, _ = self._model_rows[key]
             if status.cget("text") == "MISSING":
+                log(f"Downloading {model_names[key]}...")
                 self._do_download_model_now(key)
+                log(f"{model_names[key]}: done!")
+
         self.root.after(0, lambda: self._dl_bar.stop())
-        self.root.after(0, lambda: self._dl_label.config(text="Done!", fg=GREEN))
+        self.root.after(0, lambda: self._dl_label.config(text="All done! Models ready.", fg=GREEN))
         self.root.after(500, self._check_models)
 
     def _download_one(self, key):
