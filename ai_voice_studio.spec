@@ -27,6 +27,13 @@ _vosk_datas = [(os.path.join(_vosk_dir, f), 'vosk')
                for f in os.listdir(_vosk_dir)
                if os.path.isfile(os.path.join(_vosk_dir, f))]
 
+# ── Collect numpy DLLs (fixes Windows DLL load error) ───────
+try:
+    from PyInstaller.utils.hooks import collect_dynamic_libs
+    _numpy_bins = collect_dynamic_libs('numpy')
+except Exception:
+    _numpy_bins = []
+
 # ── Collect TTS data files ───────────────────────────────────
 try:
     from PyInstaller.utils.hooks import collect_data_files
@@ -46,7 +53,7 @@ _model_datas = [('models', 'models')] if os.path.isdir('models') else []
 a = Analysis(
     ['main.py'],
     pathex=['.'],
-    binaries=_vosk_binaries,
+    binaries=_vosk_binaries + _numpy_bins,
     datas=_vosk_datas + _model_datas + _tts_datas + _trainer_datas,
     hiddenimports=[
         'TTS', 'TTS.api', 'TTS.tts', 'TTS.tts.configs.xtts_config',

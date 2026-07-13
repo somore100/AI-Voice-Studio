@@ -18,7 +18,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install pyinstaller==6.14.2
         pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-        pip install TTS openai-whisper vosk pygame SpeechRecognition PyAudio "numpy>=1.24" librosa
+        pip install TTS openai-whisper vosk pygame SpeechRecognition PyAudio numpy librosa
       shell: cmd
     - name: Build EXE
       run: |
