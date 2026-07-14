@@ -29,10 +29,15 @@ _vosk_datas = [(os.path.join(_vosk_dir, f), 'vosk')
 
 # ── Collect numpy DLLs (fixes Windows DLL load error) ───────
 try:
-    from PyInstaller.utils.hooks import collect_dynamic_libs
+    from PyInstaller.utils.hooks import collect_dynamic_libs, collect_data_files
     _numpy_bins = collect_dynamic_libs('numpy')
-except Exception:
+    _numpy_datas = collect_data_files('numpy')
+    print(f"numpy binaries found: {len(_numpy_bins)}")
+    print(f"numpy datas found: {len(_numpy_datas)}")
+except Exception as e:
+    print(f"numpy collection error: {e}")
     _numpy_bins = []
+    _numpy_datas = []
 
 # ── Collect TTS data files ───────────────────────────────────
 try:
@@ -54,7 +59,7 @@ a = Analysis(
     ['main.py'],
     pathex=['.'],
     binaries=_vosk_binaries + _numpy_bins,
-    datas=_vosk_datas + _model_datas + _tts_datas + _trainer_datas,
+    datas=_vosk_datas + _model_datas + _tts_datas + _trainer_datas + _numpy_datas,
     hiddenimports=[
         'TTS', 'TTS.api', 'TTS.tts', 'TTS.tts.configs.xtts_config',
         'TTS.tts.configs', 'TTS.tts.models', 'TTS.tts.utils',
@@ -74,6 +79,8 @@ a = Analysis(
         'numpy', 'librosa', 'scipy', 'sklearn',
         'tkinter', 'tkinter.ttk', 'tkinter.filedialog', 'tkinter.messagebox',
         'backports', 'backports.tarfile', 'jaraco', 'jaraco.text', 'jaraco.context', 'jaraco.functools',
+        'numpy', 'numpy.core', 'numpy.core._multiarray_umath', 'numpy.core._multiarray_tests',
+        'numpy.linalg', 'numpy.linalg._umath_linalg', 'numpy.fft', 'numpy.random',
     ],
     hookspath=[],
     runtime_hooks=['hook_vosk.py'],
