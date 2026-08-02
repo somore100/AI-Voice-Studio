@@ -1,4 +1,4 @@
-name: Build Windows Installer
+name: Build All Platforms
 
 on:
   push:
@@ -6,17 +6,21 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+
+  # ─────────────────────────────────────────────────────────────
+  #  WINDOWS — exe + Inno Setup installer
+  # ─────────────────────────────────────────────────────────────
+  build-windows:
     runs-on: windows-latest
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Set up Python 3.10
+    - name: Set up Python 3.12
       uses: actions/setup-python@v5
       with:
-        python-version: "3.10"
+        python-version: "3.12"
 
     - name: Install espeak-ng
       run: choco install espeak --yes
@@ -28,7 +32,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install pyinstaller
         pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-        pip install TTS openai-whisper vosk pygame SpeechRecognition PyAudio numpy librosa
+        pip install coqui-tts openai-whisper vosk pygame SpeechRecognition PyAudio numpy librosa
       shell: cmd
 
     - name: Build EXE
@@ -37,13 +41,13 @@ jobs:
         python -m PyInstaller ai_voice_studio.spec --clean --noconfirm
       shell: cmd
 
-    - name: Prepare bundled Python 3.10
+    - name: Prepare bundled Python 3.12
       run: |
         mkdir python_bundled
-        curl -L "https://www.python.org/ftp/python/3.10.11/python-3.10.11-embed-amd64.zip" -o python_embed.zip
+        curl -L "https://www.python.org/ftp/python/3.12.7/python-3.12.7-embed-amd64.zip" -o python_embed.zip
         tar -xf python_embed.zip -C python_bundled
         curl -L "https://bootstrap.pypa.io/get-pip.py" -o get-pip.py
-        powershell -Command "(Get-Content python_bundled\python310._pth) -replace '#import site','import site' | Set-Content python_bundled\python310._pth"
+        powershell -Command "(Get-Content python_bundled\python312._pth) -replace '#import site','import site' | Set-Content python_bundled\python312._pth"
         python_bundled\python.exe get-pip.py --no-warn-script-location
         del get-pip.py
       shell: cmd
@@ -74,13 +78,118 @@ jobs:
     - name: Upload Installer
       uses: actions/upload-artifact@v4
       with:
-        name: AI_Voice_Studio_Setup
+        name: AI_Voice_Studio_Windows_Setup
         path: setup_output\AI_Voice_Studio_Setup_v1.0.exe
         retention-days: 30
 
     - name: Upload EXE only
       uses: actions/upload-artifact@v4
       with:
-        name: AI_Voice_Studio_EXE
+        name: AI_Voice_Studio_Windows_EXE
         path: dist\AI_Voice_Studio\
+        retention-days: 30
+
+  # ─────────────────────────────────────────────────────────────
+  #  LINUX — AppImage
+  # ─────────────────────────────────────────────────────────────
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y espeak-ng portaudio19-dev python3-dev libfuse2
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+        pip install coqui-tts openai-whisper vosk pygame SpeechRecognition PyAudio numpy librosa
+
+    - name: Build with PyInstaller
+      run: python -m PyInstaller ai_voice_studio_linux.spec --clean --noconfirm
+
+    - name: Download AppImage tools
+      run: |
+        curl -L -o linuxdeploy-x86_64.AppImage \
+          "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
+        chmod +x linuxdeploy-x86_64.AppImage
+
+    - name: Assemble AppDir
+      run: |
+        mkdir -p AppDir/usr/bin
+        mkdir -p AppDir/usr/share/applications
+        mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+        cp -r dist/AI_Voice_Studio/. AppDir/usr/bin/
+        cp ai-voice-studio.desktop AppDir/usr/share/applications/
+        cp ai-voice-studio.desktop AppDir/
+        cp logo.png AppDir/usr/share/icons/hicolor/256x256/apps/ai-voice-studio.png
+        cp logo.png AppDir/ai-voice-studio.png
+
+    - name: Build AppImage
+      run: |
+        export NO_STRIP=1
+        ./linuxdeploy-x86_64.AppImage --appimage-extract-and-run \
+          --appdir AppDir \
+          --executable AppDir/usr/bin/AI_Voice_Studio \
+          --desktop-file ai-voice-studio.desktop \
+          --icon-file logo.png \
+          --output appimage
+
+    - name: Upload AppImage
+      uses: actions/upload-artifact@v4
+      with:
+        name: AI_Voice_Studio_Linux_AppImage
+        path: "*.AppImage"
+        retention-days: 30
+
+  # ─────────────────────────────────────────────────────────────
+  #  MACOS — .app bundle
+  # ─────────────────────────────────────────────────────────────
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install system dependencies
+      run: |
+        brew install espeak-ng portaudio
+
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller
+        pip install torch torchaudio
+        pip install coqui-tts openai-whisper vosk pygame SpeechRecognition PyAudio numpy librosa
+
+    - name: Build .app with PyInstaller
+      run: python -m PyInstaller ai_voice_studio_macos.spec --clean --noconfirm
+
+    - name: Zip the .app bundle
+      run: |
+        cd dist
+        zip -r -y ../AI_Voice_Studio_macOS.zip "AI Voice Studio.app"
+
+    - name: Upload macOS build
+      uses: actions/upload-artifact@v4
+      with:
+        name: AI_Voice_Studio_macOS
+        path: AI_Voice_Studio_macOS.zip
         retention-days: 30

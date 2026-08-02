@@ -1,0 +1,114 @@
+# ─────────────────────────────────────────────────────────────
+#  AI Voice Studio — macOS PyInstaller spec
+#  Run with:  python3.12 -m PyInstaller ai_voice_studio_macos.spec
+# ─────────────────────────────────────────────────────────────
+import os
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
+
+block_cipher = None
+
+import vosk as _vosk_pkg
+_vosk_dir = os.path.dirname(_vosk_pkg.__file__)
+
+_vosk_binaries = []
+for f in os.listdir(_vosk_dir):
+    full = os.path.join(_vosk_dir, f)
+    if f.endswith(('.dll', '.so', '.dylib')) and os.path.isfile(full):
+        _vosk_binaries.append((full, 'vosk'))
+
+_vosk_datas = [(os.path.join(_vosk_dir, f), 'vosk')
+               for f in os.listdir(_vosk_dir)
+               if os.path.isfile(os.path.join(_vosk_dir, f))]
+
+try:
+    _numpy_bins = collect_dynamic_libs('numpy')
+    _numpy_datas = collect_data_files('numpy')
+except Exception as e:
+    print(f"numpy collection error: {e}")
+    _numpy_bins = []
+    _numpy_datas = []
+
+try:
+    _tts_datas = collect_data_files('TTS')
+except Exception:
+    _tts_datas = []
+
+try:
+    _trainer_datas = collect_data_files('trainer')
+except Exception:
+    _trainer_datas = []
+
+_model_datas = [('models', 'models')] if os.path.isdir('models') else []
+
+a = Analysis(
+    ['main.py'],
+    pathex=['.'],
+    binaries=_vosk_binaries + _numpy_bins,
+    datas=_vosk_datas + _model_datas + _tts_datas + _trainer_datas + _numpy_datas,
+    hiddenimports=[
+        'TTS', 'TTS.api', 'TTS.tts', 'TTS.tts.configs.xtts_config',
+        'TTS.tts.configs', 'TTS.tts.models', 'TTS.tts.utils',
+        'TTS.tts.layers', 'TTS.utils.audio', 'TTS.utils.io',
+        'TTS.config', 'TTS.encoder', 'TTS.vocoder',
+        'coqpit', 'trainer',
+        'TTS.tts.models.xtts', 'TTS.utils', 'TTS.vocoder',
+        'whisper', 'whisper.audio', 'whisper.decoding',
+        'whisper.model', 'whisper.tokenizer', 'whisper.transcribe',
+        'vosk',
+        'speech_recognition', 'pyaudio', 'pygame', 'pygame.mixer',
+        'torch', 'torchaudio',
+        'numpy', 'librosa', 'scipy', 'sklearn',
+        'tkinter', 'tkinter.ttk', 'tkinter.filedialog', 'tkinter.messagebox',
+        'backports', 'backports.tarfile', 'jaraco', 'jaraco.text', 'jaraco.context', 'jaraco.functools',
+        'numpy.core', 'numpy.core._multiarray_umath', 'numpy.core._multiarray_tests',
+        'numpy.linalg', 'numpy.linalg._umath_linalg', 'numpy.fft', 'numpy.random',
+    ],
+    hookspath=[],
+    runtime_hooks=['hook_vosk.py'],
+    excludes=[
+        'matplotlib', 'IPython', 'jupyter', 'notebook',
+        'PIL', 'cv2', 'tensorflow', 'keras',
+        'pytest', 'unittest',
+    ],
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name='AI_Voice_Studio',
+    debug=False,
+    strip=False,
+    upx=False,
+    console=False,
+    disable_windowed_traceback=False,
+    target_arch=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='AI_Voice_Studio',
+)
+
+# BUNDLE wraps the COLLECT output into a proper macOS .app
+app = BUNDLE(
+    coll,
+    name='AI Voice Studio.app',
+    icon=None,   # add 'logo.icns' here once a proper .icns icon exists
+    bundle_identifier='com.domore100.aivoicestudio',
+    info_plist={
+        'NSMicrophoneUsageDescription': 'AI Voice Studio needs microphone access for Speech-to-Text.',
+        'CFBundleShortVersionString': '1.0.0',
+    },
+)

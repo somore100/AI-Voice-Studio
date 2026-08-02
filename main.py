@@ -279,33 +279,64 @@ class ScrollableFrame(tk.Frame):
         for c in w.winfo_children(): self.bind_all_mousewheel(c)
 
 # ──────────────────────────────────────────────────────────────
-#  MIC PERMISSION DIALOG
+#  MIC PERMISSION CHECK (real OS-level test, not a fake dialog)
 # ──────────────────────────────────────────────────────────────
-def ask_mic_permission(root):
-    dlg = tk.Toplevel(root); dlg.title("Microphone Access")
+def check_mic_access():
+    """Actually try to open the default input device.
+    Returns (ok: bool, message: str)."""
+    try:
+        import pyaudio
+        pa = pyaudio.PyAudio()
+        try:
+            info = pa.get_default_input_device_info()
+        except Exception:
+            pa.terminate()
+            return False, "No microphone detected on this system."
+        try:
+            stream = pa.open(format=pyaudio.paInt16, channels=1, rate=16000,
+                              input=True, frames_per_buffer=1024,
+                              input_device_index=info["index"])
+            stream.stop_stream()
+            stream.close()
+            pa.terminate()
+            return True, "Microphone access granted"
+        except Exception as e:
+            pa.terminate()
+            return False, str(e)
+    except Exception as e:
+        return False, f"Microphone check failed: {e}"
+
+
+def show_mic_blocked_dialog(root, reason):
+    dlg = tk.Toplevel(root); dlg.title("Microphone Blocked")
     dlg.configure(bg=CARD); dlg.resizable(False, False); dlg.grab_set()
     root.update_idletasks()
     x = root.winfo_x() + root.winfo_width()  // 2 - 220
-    y = root.winfo_y() + root.winfo_height() // 2 - 100
-    dlg.geometry(f"440x200+{x}+{y}")
-    tk.Label(dlg, text="Microphone Permission",
-             bg=CARD, fg=PURPLE, font=("Segoe UI",12,"bold")).pack(pady=(18,4))
+    y = root.winfo_y() + root.winfo_height() // 2 - 110
+    dlg.geometry(f"440x220+{x}+{y}")
+    tk.Label(dlg, text="Microphone Blocked", bg=CARD, fg=RED,
+             font=("Segoe UI", 12, "bold")).pack(pady=(18, 4))
     tk.Label(dlg,
-             text=("This app needs your microphone for Speech-to-Text.\n\n"
-                   "If blocked, go to:\n"
-                   "Windows Settings > Privacy > Microphone > Allow apps to access."),
-             bg=CARD, fg=FG, font=("Segoe UI",9), justify="center", wraplength=400
-             ).pack(pady=(0,14))
-    result = tk.BooleanVar(value=False)
-    def allow(): result.set(True);  dlg.destroy()
-    def deny():  result.set(False); dlg.destroy()
+             text=("This app couldn't access your microphone:\n"
+                   f"{reason}\n\n"
+                   "Windows: Settings > Privacy > Microphone\n"
+                   "macOS: System Settings > Privacy & Security > Microphone\n"
+                   "Linux: check pavucontrol / system sound settings\n\n"
+                   "Fix it, then click Retry."),
+             bg=CARD, fg=FG, font=("Segoe UI", 9), justify="center", wraplength=400
+             ).pack(pady=(0, 14))
+    result = {"retry": False}
+    def retry(): result["retry"] = True; dlg.destroy()
+    def close(): dlg.destroy()
     brow = tk.Frame(dlg, bg=CARD); brow.pack()
-    for txt, cmd, col in [("Allow", allow, GREEN), ("Deny", deny, RED)]:
-        tk.Button(brow, text=txt, command=cmd, bg=col, fg=BG, relief="flat",
-                  cursor="hand2", padx=16, pady=6,
-                  font=("Segoe UI",9,"bold"), bd=0).pack(side="left", padx=8)
+    tk.Button(brow, text="Retry", command=retry, bg=GREEN, fg=BG, relief="flat",
+              cursor="hand2", padx=16, pady=6, font=("Segoe UI", 9, "bold"), bd=0
+              ).pack(side="left", padx=8)
+    tk.Button(brow, text="Close", command=close, bg=SURFACE, fg=FG, relief="flat",
+              cursor="hand2", padx=16, pady=6, font=("Segoe UI", 9), bd=0
+              ).pack(side="left", padx=8)
     dlg.wait_window()
-    return result.get()
+    return result["retry"]
 
 # ──────────────────────────────────────────────────────────────
 #  MAIN APP
@@ -358,14 +389,32 @@ class AIApp:
         root.after(400, self._request_mic_permission)
 
     def _request_mic_permission(self):
-        allowed = ask_mic_permission(self.root)
-        self._mic_allowed = allowed
-        if allowed:
+        ok, msg = check_mic_access()
+        self._mic_allowed = ok
+        if not self._stt_note.winfo_exists():
+            return
+        if ok:
             self._stt_note.config(text="Microphone access granted", fg=GREEN)
-            self.root.after(3000, lambda: self._stt_note.config(
+            self.root.after(3000, lambda: self._stt_note.winfo_exists() and self._stt_note.config(
                 text="Don't forget to choose the right microphone!", fg=YELLOW))
         else:
-            self._stt_note.config(text="Microphone denied - STT won't work", fg=RED)
+            self._stt_note.config(text="Microphone blocked - STT won't work", fg=RED)
+            if show_mic_blocked_dialog(self.root, msg):
+                self._request_mic_permission()   # user clicked Retry
+
+    def _ensure_mic_access(self):
+        """Re-check mic access on demand (e.g. right before starting STT or
+        the voice changer), in case it was blocked/fixed since startup.
+        Returns True if the mic is usable, False otherwise."""
+        if self._mic_allowed:
+            return True
+        ok, msg = check_mic_access()
+        self._mic_allowed = ok
+        if ok:
+            return True
+        if show_mic_blocked_dialog(self.root, msg):
+            return self._ensure_mic_access()   # user clicked Retry
+        return False
 
     def _lf(self, title, fg_title=PURPLE):
         f = tk.LabelFrame(self._inner, text=f"  {title}  ",
@@ -553,7 +602,8 @@ class AIApp:
         best_idx          = auto_detect_mic(self.mics)
         self.mics_display = ["System Default"] + self.mics if self.mics else ["No microphone found"]
         self.mics_real = [None] + self.mics
-        self.selected_mic = tk.StringVar(value=self.mics_display[0])
+        default_display   = self.mics_display[best_idx + 1] if self.mics else self.mics_display[0]
+        self.selected_mic = tk.StringVar(value=default_display)
         ttk.Combobox(mic_row, textvariable=self.selected_mic,
                      values=self.mics_display, state="readonly",
                      width=40, font=("Segoe UI",9)).pack(side="left", padx=6)
@@ -601,9 +651,8 @@ class AIApp:
                       self._stt_overwrite, color=YELLOW, fg=BG, bold=True).pack(side="left", padx=5)
 
     def _stt_start(self):
-        if not self._mic_allowed:
-            if not ask_mic_permission(self.root): return
-            self._mic_allowed = True
+        if not self._ensure_mic_access():
+            return
         if self.stt_engine.get() == "None installed":
             messagebox.showerror("No STT Engine",
                 "No speech recognition engine installed.\n\npip install openai-whisper\npip install vosk")
@@ -779,9 +828,8 @@ class AIApp:
         if self._vc_running: return
         mode = self.vc_mode.get()
         if "TTS pipeline" in mode:
-            if not self._mic_allowed:
-                if not ask_mic_permission(self.root): return
-                self._mic_allowed = True
+            if not self._ensure_mic_access():
+                return
         self._vc_running = True
         self._vc_status.config(text="Running...", fg=GREEN)
         threading.Thread(target=self._vc_loop, daemon=True).start()

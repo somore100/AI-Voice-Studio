@@ -1,4 +1,4 @@
-TTS
+coqui-tts
 torch
 torchaudio
 openai-whisper
