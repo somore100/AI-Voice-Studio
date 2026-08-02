@@ -1,0 +1,14 @@
+Starting...
+Python imports starting
+tkinter ok
+speech_recognition ok
+pygame ok
+About to create Tk window
+Starting UI
+Tk created
+mixer init
+mixer ok
+building models frame
+models frame ok
+building stt frame
+stt frame ok

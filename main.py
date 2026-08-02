@@ -551,9 +551,11 @@ class AIApp:
         self.recognizer   = sr.Recognizer()
         self.mics         = sr.Microphone.list_microphone_names()
         best_idx          = auto_detect_mic(self.mics)
-        self.selected_mic = tk.StringVar(value=self.mics[best_idx] if self.mics else "None")
+        self.mics_display = ["System Default"] + self.mics if self.mics else ["No microphone found"]
+        self.mics_real = [None] + self.mics
+        self.selected_mic = tk.StringVar(value=self.mics_display[0])
         ttk.Combobox(mic_row, textvariable=self.selected_mic,
-                     values=self.mics, state="readonly",
+                     values=self.mics_display, state="readonly",
                      width=40, font=("Segoe UI",9)).pack(side="left", padx=6)
         self.always_on_top = tk.BooleanVar(value=False)
         ttk.Checkbutton(mic_row, text="On Top", variable=self.always_on_top,
@@ -1194,7 +1196,7 @@ class AIApp:
             self.root.after(0, lambda: self._set_stt_status("Loading Whisper model...", YELLOW))
             model = get_whisper_model()
             wlang = LANG_WHISPER[lang_disp]
-            with sr.Microphone(device_index=mic_index, sample_rate=16000) as source:
+            with sr.Microphone(device_index=mic_index if mic_index is not None else None, sample_rate=16000) as source:
                 self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
                 while self.is_listening:
                     try:
@@ -1227,7 +1229,7 @@ class AIApp:
                 self.is_listening = False; return
 
             rec = KaldiRecognizer(vosk_model, 16000); rec.SetWords(True)
-            with sr.Microphone(device_index=mic_index, sample_rate=16000) as source:
+            with sr.Microphone(device_index=mic_index if mic_index is not None else None, sample_rate=16000) as source:
                 self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
                 while self.is_listening:
                     try:

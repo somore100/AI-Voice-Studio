@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=AI Voice Studio
+Comment=Offline TTS/STT/Translator desktop app
+Exec=AI_Voice_Studio
+Icon=ai-voice-studio
+Type=Application
+Categories=AudioVideo;Audio;Utility;
+Terminal=false
