@@ -32,7 +32,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install pyinstaller
         pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-        pip install coqui-tts openai-whisper vosk pygame SpeechRecognition PyAudio numpy librosa
+        pip install coqui-tts "transformers>=4.57,<5" openai-whisper vosk pygame SpeechRecognition PyAudio numpy librosa
       shell: cmd
 
     - name: Build EXE
@@ -107,14 +107,14 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y espeak-ng portaudio19-dev python3-dev libfuse2
+        sudo apt-get install -y espeak-ng portaudio19-dev python3-dev libfuse2 imagemagick
 
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
         pip install pyinstaller
         pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-        pip install coqui-tts openai-whisper vosk pygame SpeechRecognition PyAudio numpy librosa
+        pip install coqui-tts "transformers>=4.57,<5" openai-whisper vosk pygame SpeechRecognition PyAudio numpy librosa
 
     - name: Build with PyInstaller
       run: python -m PyInstaller ai_voice_studio_linux.spec --clean --noconfirm
@@ -133,8 +133,9 @@ jobs:
         cp -r dist/AI_Voice_Studio/. AppDir/usr/bin/
         cp ai-voice-studio.desktop AppDir/usr/share/applications/
         cp ai-voice-studio.desktop AppDir/
-        cp logo.png AppDir/usr/share/icons/hicolor/256x256/apps/ai-voice-studio.png
-        cp logo.png AppDir/ai-voice-studio.png
+        convert logo.png -resize 256x256 -gravity center -background none -extent 256x256 icon_256.png
+        cp icon_256.png AppDir/usr/share/icons/hicolor/256x256/apps/ai-voice-studio.png
+        cp icon_256.png AppDir/ai-voice-studio.png
 
     - name: Build AppImage
       run: |
@@ -143,7 +144,7 @@ jobs:
           --appdir AppDir \
           --executable AppDir/usr/bin/AI_Voice_Studio \
           --desktop-file ai-voice-studio.desktop \
-          --icon-file logo.png \
+          --icon-file icon_256.png \
           --output appimage
 
     - name: Upload AppImage
@@ -177,7 +178,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install pyinstaller
         pip install torch torchaudio
-        pip install coqui-tts openai-whisper vosk pygame SpeechRecognition PyAudio numpy librosa
+        pip install coqui-tts "transformers>=4.57,<5" openai-whisper vosk pygame SpeechRecognition PyAudio numpy librosa
 
     - name: Build .app with PyInstaller
       run: python -m PyInstaller ai_voice_studio_macos.spec --clean --noconfirm
