@@ -70,6 +70,7 @@ cp "$BASE_DIR/icon_256.png" "$APPDIR/ai-voice-studio.png"
 
 echo "── Step 4: Run linuxdeploy to bundle shared libs + build AppImage ─"
 export NO_STRIP=1   # keep symbols; some torch/numpy .so files break if stripped
+export ARCH=x86_64  # appimagetool can't reliably auto-detect arch with mixed ML .so files bundled
 "$LINUXDEPLOY" \
     --appdir "$APPDIR" \
     --executable "$APPDIR/usr/bin/$APP_NAME" \
