@@ -23,7 +23,7 @@ jobs:
         python-version: "3.12"
 
     - name: Install espeak-ng
-      run: choco install espeak --yes
+      run: choco install espeak-ng --yes
       shell: cmd
       continue-on-error: true
 
