@@ -26,9 +26,24 @@ if getattr(sys, 'frozen', False):
 else:
     _BASE = os.path.dirname(os.path.realpath(__file__))
 
-_APPDATA = os.environ.get('APPDATA', '')
-if _APPDATA and getattr(sys, 'frozen', False):
-    _MODELS_BASE = os.path.join(_APPDATA, 'AI Voice Studio', 'models')
+def _user_data_dir():
+    """Cross-platform writable location for models/config when running frozen.
+    Windows: %APPDATA%\\AI Voice Studio
+    macOS:   ~/Library/Application Support/AI Voice Studio
+    Linux:   $XDG_DATA_HOME/AI Voice Studio  (falls back to ~/.local/share)
+    This matters because a frozen build's own folder can be read-only
+    (Program Files without admin, a mounted AppImage, a signed .app bundle)."""
+    if sys.platform == "win32":
+        base = os.environ.get('APPDATA') or os.path.expanduser('~')
+        return os.path.join(base, 'AI Voice Studio')
+    elif sys.platform == "darwin":
+        return os.path.expanduser('~/Library/Application Support/AI Voice Studio')
+    else:
+        base = os.environ.get('XDG_DATA_HOME') or os.path.expanduser('~/.local/share')
+        return os.path.join(base, 'AI Voice Studio')
+
+if getattr(sys, 'frozen', False):
+    _MODELS_BASE = os.path.join(_user_data_dir(), 'models')
 else:
     _MODELS_BASE = os.path.join(_BASE, 'models')
 os.makedirs(_MODELS_BASE, exist_ok=True)
@@ -40,8 +55,8 @@ if os.path.isdir(_ESPEAK_PATH):
     os.environ["ESPEAK_DATA_PATH"]       = os.path.join(_ESPEAK_PATH, "espeak-ng-data")
 VCTK_MODEL_PATH   = os.path.join(_MODELS_BASE, "vctk")
 XTTS_MODEL_PATH   = os.path.join(_MODELS_BASE, "xtts_v2")
-WHISPER_MODEL_DIR = os.path.join(_BASE, "models", "whisper")
-VOSK_MODEL_DIR    = os.path.join(_BASE, "models", "vosk")
+WHISPER_MODEL_DIR = os.path.join(_MODELS_BASE, "whisper")
+VOSK_MODEL_DIR    = os.path.join(_MODELS_BASE, "vosk")
 
 # ──────────────────────────────────────────────────────────────
 #  COLOURS
