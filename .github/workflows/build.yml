@@ -152,7 +152,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: AI_Voice_Studio_Linux_AppImage
-        path: "*.AppImage"
+        path: "AI_Voice_Studio*.AppImage"
         retention-days: 30
 
   # ─────────────────────────────────────────────────────────────
