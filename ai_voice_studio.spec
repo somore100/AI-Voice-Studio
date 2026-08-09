@@ -52,15 +52,27 @@ try:
 except Exception:
     _trainer_datas = []
 
+# ── Collect torch/torchaudio fully (binaries + datas + submodules) ──
+# Relying on the automatic PyInstaller torch hook alone can miss native
+# runtime libs (OpenMP/MKL etc.), causing "partially initialized module
+# 'torch' has no attribute X" crashes at runtime. collect_all grabs
+# everything torch ships, at the cost of a larger bundle.
+from PyInstaller.utils.hooks import collect_all
+_torch_datas, _torch_bins, _torch_hidden = collect_all('torch')
+try:
+    _torchaudio_datas, _torchaudio_bins, _torchaudio_hidden = collect_all('torchaudio')
+except Exception:
+    _torchaudio_datas, _torchaudio_bins, _torchaudio_hidden = [], [], []
+
 # ── Models folder (optional) ─────────────────────────────────
 _model_datas = [('models', 'models')] if os.path.isdir('models') else []
 
 a = Analysis(
     ['main.py'],
     pathex=['.'],
-    binaries=_vosk_binaries + _numpy_bins,
-    datas=_vosk_datas + _model_datas + _tts_datas + _trainer_datas + _numpy_datas,
-    hiddenimports=[
+    binaries=_vosk_binaries + _numpy_bins + _torch_bins + _torchaudio_bins,
+    datas=_vosk_datas + _model_datas + _tts_datas + _trainer_datas + _numpy_datas + _torch_datas + _torchaudio_datas,
+    hiddenimports=_torch_hidden + _torchaudio_hidden + [
         'TTS', 'TTS.api', 'TTS.tts', 'TTS.tts.configs.xtts_config',
         'TTS.tts.configs', 'TTS.tts.models', 'TTS.tts.utils',
         'TTS.tts.layers', 'TTS.utils.audio', 'TTS.utils.io',
