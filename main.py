@@ -13,6 +13,29 @@ import speech_recognition as sr
 import pygame
 
 # ──────────────────────────────────────────────────────────────
+#  EAGER TORCH IMPORT (must happen on the main thread, before any
+#  background threads exist)
+# ──────────────────────────────────────────────────────────────
+# torch is only ever imported lazily elsewhere in this file (inside
+# functions, when actually needed for TTS/whisper work). But several
+# background threads (e.g. the startup model-check thread) end up being
+# the FIRST thing to trigger `import torch` if we don't force it here.
+# Under PyInstaller's frozen import machinery, a nested submodule import
+# of torch racing across threads can leave torch partially initialized
+# in one thread's view, crashing with:
+#   AttributeError: partially initialized module 'torch' has no
+#   attribute 'autograd' (most likely due to a circular import)
+# Importing torch once here, synchronously, on the main thread, before
+# any thread is spawned, guarantees it's fully cached in sys.modules
+# first — every later `import torch` anywhere is then just a cheap
+# dict lookup, not real module execution, so there's nothing left to race.
+try:
+    import torch          # noqa: F401
+    import torch.autograd  # noqa: F401
+except Exception as _e:
+    print(f"[AVS] Warning: eager torch import failed: {_e}")
+
+# ──────────────────────────────────────────────────────────────
 #  PERSISTENT CONFIG
 # ──────────────────────────────────────────────────────────────
 LAST_FOLDER     = r"C:/Users/Dominik Žibert/Documents/ai_voice/audio"  # auto-updates on browse
