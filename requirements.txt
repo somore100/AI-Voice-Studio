@@ -1,7 +1,7 @@
 coqui-tts[codec]
 transformers>=4.57,<5
-torch
-torchaudio
+torch==2.10.0
+torchaudio==2.10.0
 openai-whisper
 vosk
 pygame
