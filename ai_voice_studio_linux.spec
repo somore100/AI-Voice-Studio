@@ -80,7 +80,7 @@ a = Analysis(
     excludes=[
         'matplotlib', 'IPython', 'jupyter', 'notebook',
         'PIL', 'cv2', 'tensorflow', 'keras',
-        'pytest', 'unittest',
+        'pytest',
     ],
     cipher=block_cipher,
     noarchive=False,
