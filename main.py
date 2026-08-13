@@ -9,6 +9,7 @@ import time
 import urllib.request
 import urllib.parse
 import json
+import traceback
 import speech_recognition as sr
 import pygame
 
@@ -1211,6 +1212,11 @@ class AIApp:
             self.root.after(0, self._stop_loading)
             self.root.after(0, lambda: self._set_tts_status("Playing preview...", GREEN))
         except Exception as e:
+            print(f"[AVS] Preview failed: {e}")
+            traceback.print_exc()
+            if e.__cause__ is not None:
+                print("[AVS] Underlying cause:")
+                traceback.print_exception(type(e.__cause__), e.__cause__, e.__cause__.__traceback__)
             self.root.after(0, self._stop_loading)
             self.root.after(0, lambda: messagebox.showerror("Preview Error", str(e)))
             self.root.after(0, lambda: self._set_tts_status("Error", RED))
@@ -1244,6 +1250,11 @@ class AIApp:
             self.root.after(0, lambda: messagebox.showinfo("Saved!", f"Audio saved to:\n{out}"))
             self.root.after(0, lambda: self._set_tts_status("Saved!", GREEN))
         except Exception as e:
+            print(f"[AVS] Save failed: {e}")
+            traceback.print_exc()
+            if e.__cause__ is not None:
+                print("[AVS] Underlying cause:")
+                traceback.print_exception(type(e.__cause__), e.__cause__, e.__cause__.__traceback__)
             self.root.after(0, self._stop_loading)
             self.root.after(0, lambda: messagebox.showerror("TTS Error", str(e)))
             self.root.after(0, lambda: self._set_tts_status("Error", RED))
