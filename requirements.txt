@@ -1,5 +1,5 @@
 coqui-tts[codec]
-transformers>=4.57,<5
+transformers>=4.46,<4.57
 torch==2.10.0
 torchaudio==2.10.0
 openai-whisper

@@ -37,6 +37,27 @@ except Exception as _e:
     print(f"[AVS] Warning: eager torch import failed: {_e}")
 
 # ──────────────────────────────────────────────────────────────
+#  EAGER TTS IMPORT (same reasoning as torch above)
+# ──────────────────────────────────────────────────────────────
+# TTS was never imported at module scope anywhere in this file — every
+# `from TTS.api import TTS` lives inside get_tts_vctk()/get_tts_xtts()/
+# _do_download_model(), and every one of those only ever runs on a
+# background thread (Preview/Save/download all use threading.Thread).
+# So the very first import of TTS under PyInstaller's frozen importer
+# happened on a background thread, hitting the same class of race as
+# the torch bug above — except for TTS it surfaces as:
+#   KeyError: 'TTS'
+# raised from importlib._bootstrap_external._get_parent_path(), because
+# TTS's own _NamespacePath machinery does sys.modules['TTS'] mid-import
+# and finds it not yet registered. Importing it here, synchronously, on
+# the main thread before any thread exists, fixes it the same way.
+try:
+    import TTS              # noqa: F401
+    from TTS.api import TTS as _TTS_api  # noqa: F401
+except Exception as _e:
+    print(f"[AVS] Warning: eager TTS import failed: {_e}")
+
+# ──────────────────────────────────────────────────────────────
 #  PERSISTENT CONFIG
 # ──────────────────────────────────────────────────────────────
 LAST_FOLDER     = r"C:/Users/Dominik Žibert/Documents/ai_voice/audio"  # auto-updates on browse
@@ -947,176 +968,14 @@ class AIApp:
         tk.Label(f, text="v1  |", bg=BG, fg=BORDER,
                  font=("Segoe UI",8)).pack(side="right", padx=(0,4))
 
-    def _build_models_frame(self):
-        f = self._lf("Models and Setup", fg_title=CYAN)
-        tk.Label(f, text="Check and download required AI models. All stored in the app folder.",
-                 bg=CARD, fg=FG_DIM, font=("Segoe UI",8)).pack(anchor="w", padx=2, pady=(0,6))
-        self._model_rows = {}
-        models = [
-            ("tts_pkg",    "Coqui TTS package",     "pip",   "Required for all TTS"),
-            ("whisper_pkg","Whisper package",        "pip",   "Required for STT"),
-            ("vosk_pkg",   "Vosk package",           "pip",   "Optional STT"),
-            ("vctk",       "VCTK English voices",    "~100MB","English TTS"),
-            ("xtts",       "XTTS-v2 Multilingual",  "~2GB",  "Multilingual TTS"),
-            ("whisper",    "Whisper STT model",      "~150MB","Speech recognition"),
-        ]
-        for key, name, size, desc in models:
-            row = tk.Frame(f, bg=CARD); row.pack(fill="x", pady=2, padx=2)
-            tk.Label(row, text=name, bg=CARD, fg=FG,
-                     font=("Segoe UI",9,"bold"), width=24, anchor="w").pack(side="left")
-            tk.Label(row, text=size, bg=CARD, fg=FG_DIM,
-                     font=("Segoe UI",8), width=8).pack(side="left")
-            tk.Label(row, text=desc, bg=CARD, fg=FG_DIM,
-                     font=("Segoe UI",8), width=22, anchor="w").pack(side="left")
-            status = tk.Label(row, text="...", bg=CARD, fg=YELLOW,
-                              font=("Segoe UI",8,"bold"), width=14, anchor="w")
-            status.pack(side="left")
-            btn = tk.Button(row, text="Install", bg=BLUE, fg=BG,
-                            relief="flat", cursor="hand2", padx=8, pady=2,
-                            font=("Segoe UI",8,"bold"), bd=0,
-                            command=lambda k=key: self._download_one(k))
-            self._model_rows[key] = (status, btn)
-        self._dl_label = self._label(f, "", fg=FG_DIM, font=("Segoe UI",8))
-        self._dl_label.pack(anchor="w", padx=2, pady=(6,0))
-        self._dl_bar = ttk.Progressbar(f, style="Loading.Horizontal.TProgressbar",
-                                        mode="indeterminate", length=500)
-        self._dl_bar.pack(fill="x", padx=2, pady=(2,6))
-        br = tk.Frame(f, bg=CARD); br.pack(pady=4)
-        self._btn(br, "Check All",        self._check_models,     color=SURFACE).pack(side="left", padx=4)
-        self._btn(br, "Download Missing", self._download_missing,  color=GREEN, fg=BG, bold=True).pack(side="left", padx=4)
-        self.root.after(800, self._check_models)
-
-    def _set_model_status(self, key, state, text):
-        status, btn = self._model_rows[key]
-        colors = {"ok": GREEN, "missing": RED, "checking": YELLOW, "working": CYAN}
-        status.config(text=text, fg=colors.get(state, FG))
-        if state == "missing":
-            btn.pack(side="right", padx=4)
-        else:
-            btn.pack_forget()
-
-    def _check_models(self):
-        threading.Thread(target=self._do_check_models, daemon=True).start()
-
-    def _do_check_models(self):
-        def upd(key, state, text):
-            self.root.after(0, lambda k=key, s=state, t=text: self._set_model_status(k, s, t))
-        def check_pkg_fast(pkg_name):
-            import site
-            try:
-                dirs = site.getsitepackages() + [site.getusersitepackages()]
-            except Exception:
-                dirs = [site.getusersitepackages()]
-            for sp in dirs:
-                if os.path.isdir(sp):
-                    for d in os.listdir(sp):
-                        if d.lower().replace("-","_").startswith(pkg_name.lower()) and "dist-info" in d:
-                            return True
-            return False
-        for pkg, key in [("TTS","tts_pkg"),("openai_whisper","whisper_pkg"),("vosk","vosk_pkg")]:
-            ok = check_pkg_fast(pkg)
-            upd(key, "ok" if ok else "missing", "Installed" if ok else "MISSING")
-        whisper_ok = os.path.isfile(os.path.join(_MODELS_BASE, "whisper", "small.pt"))
-        upd("whisper", "ok" if whisper_ok else "missing", "Ready" if whisper_ok else "MISSING")
-        vctk_path = os.path.join(_MODELS_BASE, "vctk")
-        vctk_ok = os.path.isdir(vctk_path) and len(os.listdir(vctk_path)) > 0
-        upd("vctk", "ok" if vctk_ok else "missing", "Ready" if vctk_ok else "MISSING")
-        xtts_path = os.path.join(_MODELS_BASE, "xtts_v2")
-        xtts_ok = os.path.isdir(xtts_path) and len(os.listdir(xtts_path)) > 0
-        upd("xtts", "ok" if xtts_ok else "missing", "Ready" if xtts_ok else "MISSING")
-
-    def _download_missing(self):
-        threading.Thread(target=self._do_download_all_missing, daemon=True).start()
-
-    def _do_download_all_missing(self):
-        self.root.after(0, lambda: self._dl_bar.start(12))
-        import subprocess, sys as _sys
-
-        def log(msg):
-            print(f"[AVS] {msg}")
-            self.root.after(0, lambda m=msg: self._dl_label.config(text=m, fg=YELLOW))
-
-        pkg_map = {
-            "tts_pkg":    (["TTS"],            "Coqui TTS engine"),
-            "whisper_pkg":(["openai-whisper"], "Whisper STT"),
-            "vosk_pkg":   (["vosk"],           "Vosk STT"),
-        }
-
-        # Install packages first, one by one
-        for key, (pip_args, desc) in pkg_map.items():
-            status, _ = self._model_rows[key]
-            if status.cget("text") == "MISSING":
-                log(f"Installing {desc}...")
-                self.root.after(0, lambda k=key: self._set_model_status(k, "working", "Installing..."))
-                r = subprocess.run([_sys.executable, "-m", "pip", "install"] + pip_args,
-                                   capture_output=True, text=True)
-                ok = r.returncode == 0
-                log(f"{desc}: {'OK' if ok else 'FAILED'}")
-                if not ok:
-                    print(f"[AVS] pip error: {r.stderr[-300:]}")
-                self.root.after(0, lambda k=key, o=ok: self._set_model_status(
-                    k, "ok" if o else "missing", "Installed" if o else "FAILED"))
-
-        # Download models one by one
-        model_names = {
-            "whisper": "Whisper STT model (~150MB)",
-            "vctk":    "VCTK English voices (~100MB)",
-            "xtts":    "XTTS-v2 multilingual voices (~2GB)",
-        }
-        for key in ["whisper", "vctk", "xtts"]:
-            status, _ = self._model_rows[key]
-            if status.cget("text") == "MISSING":
-                log(f"Downloading {model_names[key]}...")
-                self._do_download_model_now(key)
-                log(f"{model_names[key]}: done!")
-
-        self.root.after(0, lambda: self._dl_bar.stop())
-        self.root.after(0, lambda: self._dl_label.config(text="All done! Models ready.", fg=GREEN))
-        self.root.after(500, self._check_models)
-
-    def _download_one(self, key):
-        threading.Thread(target=lambda: self._do_download_model_now(key), daemon=True).start()
-
-    def _do_download_model_now(self, key):
-        self.root.after(0, lambda: self._dl_bar.start(12))
-        self.root.after(0, lambda k=key: self._set_model_status(k, "working", "Downloading..."))
-        models_dir = _MODELS_BASE
-        os.makedirs(models_dir, exist_ok=True)
-        os.environ["TTS_HOME"] = models_dir
-        os.environ["COQUI_TOS_AGREED"] = "1"
-        print(f"[AVS] Starting download: {key}")
-        print(f"[AVS] Models directory: {models_dir}")
-        try:
-            if key == "whisper":
-                self.root.after(0, lambda: self._dl_label.config(text="Downloading Whisper (~150MB)...", fg=YELLOW))
-                print("[AVS] Downloading Whisper small model (~150MB)...")
-                import whisper
-                out_dir = os.path.join(models_dir, "whisper")
-                os.makedirs(out_dir, exist_ok=True)
-                whisper.load_model("small", download_root=out_dir)
-                print("[AVS] Whisper download complete!")
-                self.root.after(0, lambda: self._set_model_status("whisper", "ok", "Ready"))
-            elif key == "vctk":
-                self.root.after(0, lambda: self._dl_label.config(text="Downloading VCTK voices (~100MB)...", fg=YELLOW))
-                from TTS.api import TTS
-                TTS(model_name="tts_models/en/vctk/vits", progress_bar=True, gpu=False)
-                self.root.after(0, lambda: self._set_model_status("vctk", "ok", "Ready"))
-            elif key == "xtts":
-                self.root.after(0, lambda: self._dl_label.config(text="Downloading XTTS-v2 (~2GB)...", fg=YELLOW))
-                import torch, torch.serialization
-                try:
-                    from TTS.tts.configs.xtts_config import XttsConfig
-                    torch.serialization.add_safe_globals([XttsConfig])
-                except Exception:
-                    pass
-                from TTS.api import TTS
-                TTS(model_name="tts_models/multilingual/multi-dataset/xtts_v2", progress_bar=True, gpu=False)
-                self.root.after(0, lambda: self._set_model_status("xtts", "ok", "Ready"))
-        except Exception as e:
-            err = str(e)[:80]
-            self.root.after(0, lambda k=key, t=err: self._set_model_status(k, "missing", f"Error: {t}"))
-        self.root.after(0, lambda: self._dl_bar.stop())
-
+    # NOTE: The Model Download Manager UI/logic (_build_models_frame,
+    # _check_models, _download_missing, etc.) lives below as module-level
+    # functions and gets patched onto this class near the end of the file
+    # (search "Patch these methods onto AIApp"). An earlier, differently-
+    # implemented copy of these same methods used to live here and was
+    # dead code — Python's later `AIApp._x = _x` assignments always won,
+    # so this in-class copy never actually ran. Removed 2026-08-24 to
+    # match the dedup already done for the duplicate __main__ block.
 
     def refresh_voice_list(self):
         filt = self.gender_filter.get(); entries = []
