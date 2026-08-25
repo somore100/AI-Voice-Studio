@@ -34,6 +34,10 @@ jobs:
         pip install "coqui-tts[codec]" "transformers>=4.46,<4.57" torch==2.10.0 torchaudio==2.10.0 openai-whisper vosk pygame SpeechRecognition PyAudio numpy librosa --extra-index-url https://download.pytorch.org/whl/cpu
       shell: cmd
 
+    - name: Patch TTS for PyInstaller
+      run: python patch_tts_for_pyinstaller.py
+      shell: cmd
+
     - name: Build EXE
       run: |
         set AVS_CONSOLE=1
@@ -114,6 +118,9 @@ jobs:
         pip install pyinstaller
         pip install "coqui-tts[codec]" "transformers>=4.46,<4.57" torch==2.10.0 torchaudio==2.10.0 openai-whisper vosk pygame SpeechRecognition PyAudio numpy librosa --extra-index-url https://download.pytorch.org/whl/cpu
 
+    - name: Patch TTS for PyInstaller
+      run: python patch_tts_for_pyinstaller.py
+
     - name: Build with PyInstaller
       run: python -m PyInstaller ai_voice_studio_linux.spec --clean --noconfirm
 
@@ -177,6 +184,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install pyinstaller
         pip install "coqui-tts[codec]" "transformers>=4.46,<4.57" torch==2.10.0 torchaudio==2.10.0 openai-whisper vosk pygame SpeechRecognition PyAudio numpy librosa
+
+    - name: Patch TTS for PyInstaller
+      run: python patch_tts_for_pyinstaller.py
 
     - name: Build .app with PyInstaller
       run: python -m PyInstaller ai_voice_studio_macos.spec --clean --noconfirm

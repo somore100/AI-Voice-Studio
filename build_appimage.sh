@@ -21,7 +21,10 @@ DIST_DIR="$BASE_DIR/dist/$APP_NAME"
 APPDIR="$BASE_DIR/AppDir"
 TOOLS_DIR="$BASE_DIR/.appimage_tools"
 
-echo "── Step 1: PyInstaller build ─────────────────────────────"
+echo "── Step 1: Patch TTS for PyInstaller ───────────────────────"
+python patch_tts_for_pyinstaller.py
+
+echo "── Step 2: PyInstaller build ─────────────────────────────"
 python -m PyInstaller ai_voice_studio_linux.spec --clean --noconfirm
 
 if [ ! -f "$DIST_DIR/$APP_NAME" ]; then
@@ -29,7 +32,7 @@ if [ ! -f "$DIST_DIR/$APP_NAME" ]; then
     exit 1
 fi
 
-echo "── Step 2: Download AppImage tools (cached after first run) ─"
+echo "── Step 3: Download AppImage tools (cached after first run) ─"
 mkdir -p "$TOOLS_DIR"
 
 LINUXDEPLOY="$TOOLS_DIR/linuxdeploy-x86_64.AppImage"
@@ -46,7 +49,7 @@ if [ ! -f "$APPIMAGETOOL" ]; then
     chmod +x "$APPIMAGETOOL"
 fi
 
-echo "── Step 3: Assemble AppDir ────────────────────────────────"
+echo "── Step 4: Assemble AppDir ────────────────────────────────"
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin"
 mkdir -p "$APPDIR/usr/share/applications"
@@ -68,7 +71,7 @@ convert "$BASE_DIR/logo.png" -resize 256x256 -gravity center -background none -e
 cp "$BASE_DIR/icon_256.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/ai-voice-studio.png"
 cp "$BASE_DIR/icon_256.png" "$APPDIR/ai-voice-studio.png"
 
-echo "── Step 4: Run linuxdeploy to bundle shared libs + build AppImage ─"
+echo "── Step 5: Run linuxdeploy to bundle shared libs + build AppImage ─"
 export NO_STRIP=1   # keep symbols; some torch/numpy .so files break if stripped
 export ARCH=x86_64  # appimagetool can't reliably auto-detect arch with mixed ML .so files bundled
 "$LINUXDEPLOY" \

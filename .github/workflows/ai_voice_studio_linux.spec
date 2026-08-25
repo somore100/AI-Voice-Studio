@@ -1,0 +1,123 @@
+# ─────────────────────────────────────────────────────────────
+#  AI Voice Studio — Linux PyInstaller spec (for AppImage)
+#  Run with:  python3.10 -m PyInstaller ai_voice_studio_linux.spec
+# ─────────────────────────────────────────────────────────────
+import sys, os
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
+
+block_cipher = None
+
+# ── Find vosk package directory so we can bundle its .so files ──
+import vosk as _vosk_pkg
+_vosk_dir = os.path.dirname(_vosk_pkg.__file__)
+
+_vosk_binaries = []
+for f in os.listdir(_vosk_dir):
+    full = os.path.join(_vosk_dir, f)
+    if f.endswith(('.dll', '.so', '.dylib')) and os.path.isfile(full):
+        _vosk_binaries.append((full, 'vosk'))
+
+_vosk_datas = [(os.path.join(_vosk_dir, f), 'vosk')
+               for f in os.listdir(_vosk_dir)
+               if os.path.isfile(os.path.join(_vosk_dir, f))]
+
+# ── Collect numpy shared libs (same helper works cross-platform) ─
+try:
+    _numpy_bins = collect_dynamic_libs('numpy')
+    _numpy_datas = collect_data_files('numpy')
+except Exception as e:
+    print(f"numpy collection error: {e}")
+    _numpy_bins = []
+    _numpy_datas = []
+
+# ── Collect TTS / trainer data files ─────────────────────────────
+try:
+    _tts_datas = collect_data_files('TTS', include_py_files=True)
+except Exception:
+    _tts_datas = []
+
+try:
+    _trainer_datas = collect_data_files('trainer')
+except Exception:
+    _trainer_datas = []
+
+# ── Collect torch/torchaudio fully (binaries + datas + submodules) ──
+from PyInstaller.utils.hooks import collect_all
+_torch_datas, _torch_bins, _torch_hidden = collect_all('torch')
+try:
+    _torchaudio_datas, _torchaudio_bins, _torchaudio_hidden = collect_all('torchaudio')
+except Exception:
+    _torchaudio_datas, _torchaudio_bins, _torchaudio_hidden = [], [], []
+
+# transformers lazy-loads model-specific classes (e.g. GPT2PreTrainedModel,
+# used by Coqui's XTTS) by dynamic string-based import, which PyInstaller's
+# static analysis can't see. collect_all forces every submodule in.
+try:
+    _tf_datas, _tf_bins, _tf_hidden = collect_all('transformers')
+except Exception:
+    _tf_datas, _tf_bins, _tf_hidden = [], [], []
+
+# ── Models folder (optional, only if pre-downloaded) ─────────────
+_model_datas = [('models', 'models')] if os.path.isdir('models') else []
+
+a = Analysis(
+    ['main.py'],
+    pathex=['.'],
+    binaries=_vosk_binaries + _numpy_bins + _torch_bins + _torchaudio_bins + _tf_bins,
+    datas=_vosk_datas + _model_datas + _tts_datas + _trainer_datas + _numpy_datas + _torch_datas + _torchaudio_datas + _tf_datas,
+    hiddenimports=_torch_hidden + _torchaudio_hidden + _tf_hidden + [
+        'TTS', 'TTS.api', 'TTS.tts', 'TTS.tts.configs.xtts_config',
+        'TTS.tts.configs', 'TTS.tts.models', 'TTS.tts.utils',
+        'TTS.tts.layers', 'TTS.utils.audio', 'TTS.utils.io',
+        'TTS.config', 'TTS.encoder', 'TTS.vocoder',
+        'coqpit', 'trainer',
+        'TTS.tts.models.xtts', 'TTS.utils', 'TTS.vocoder',
+        'whisper', 'whisper.audio', 'whisper.decoding',
+        'whisper.model', 'whisper.tokenizer', 'whisper.transcribe',
+        'vosk',
+        'speech_recognition', 'pyaudio', 'pygame', 'pygame.mixer',
+        'torch', 'torchaudio',
+        'numpy', 'librosa', 'scipy', 'sklearn',
+        'tkinter', 'tkinter.ttk', 'tkinter.filedialog', 'tkinter.messagebox',
+        'backports', 'backports.tarfile', 'jaraco', 'jaraco.text', 'jaraco.context', 'jaraco.functools',
+        'numpy.core', 'numpy.core._multiarray_umath', 'numpy.core._multiarray_tests',
+        'numpy.linalg', 'numpy.linalg._umath_linalg', 'numpy.fft', 'numpy.random',
+    ],
+    hookspath=[],
+    runtime_hooks=['hook_vosk.py'],
+    excludes=[
+        'matplotlib', 'IPython', 'jupyter', 'notebook',
+        'PIL', 'cv2', 'tensorflow', 'keras',
+        'pytest',
+    ],
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name='AI_Voice_Studio',
+    debug=False,
+    strip=False,
+    upx=False,
+    console=False,          # no separate console window on Linux either
+    disable_windowed_traceback=False,
+    target_arch=None,
+    # no .ico icon on Linux — AppImage icon is set separately (see .desktop file)
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name='AI_Voice_Studio',
+)
