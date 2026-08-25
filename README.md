@@ -1,3 +1,4 @@
+
 # AI Voice Studio
  
 A local AI voice toolkit focused on making voice AI more accessible through a unified interface.
@@ -78,3 +79,6 @@ python main.py
 ## License
  
 MIT
+<img width="817" height="695" alt="AI_voice_studio" src="https://github.com/user-attachments/assets/bda9a7f6-6b42-42c5-9651-b0b3ad299cc3" />
+<img width="817" height="695" alt="Ai_voice_studio 2026-08-24 18-48-10" src="https://github.com/user-attachments/assets/8b3a1d86-9509-4504-9222-c439fbe0d950" />
+<img width="817" height="695" alt="Ai_voice_studio 2026-08-24 18-47-37" src="https://github.com/user-attachments/assets/a7ccb209-ca22-44ea-b5dd-2b9000b077ae" />
