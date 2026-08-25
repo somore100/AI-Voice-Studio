@@ -36,6 +36,17 @@ try:
 except Exception:
     _tts_datas = []
 
+# ── gruut's __init__.py reads a plain VERSION text file relative to its
+# own package dir at import time (_DIR / "VERSION").read_text(...) - a
+# plain data-file omission, not a .py-source issue. Without this it's
+# missing under PyInstaller and gruut (a TTS multilingual/text-cleaning
+# dependency, reached during TTS's own import chain) fails with
+# FileNotFoundError: .../gruut/VERSION
+try:
+    _gruut_datas = collect_data_files('gruut')
+except Exception:
+    _gruut_datas = []
+
 try:
     _trainer_datas = collect_data_files('trainer')
 except Exception:
@@ -64,7 +75,7 @@ a = Analysis(
     ['main.py'],
     pathex=['.'],
     binaries=_vosk_binaries + _numpy_bins + _torch_bins + _torchaudio_bins + _tf_bins,
-    datas=_vosk_datas + _model_datas + _tts_datas + _trainer_datas + _numpy_datas + _torch_datas + _torchaudio_datas + _tf_datas,
+    datas=_vosk_datas + _model_datas + _tts_datas + _trainer_datas + _gruut_datas + _numpy_datas + _torch_datas + _torchaudio_datas + _tf_datas,
     hiddenimports=_torch_hidden + _torchaudio_hidden + _tf_hidden + [
         'TTS', 'TTS.api', 'TTS.tts', 'TTS.tts.configs.xtts_config',
         'TTS.tts.configs', 'TTS.tts.models', 'TTS.tts.utils',
@@ -86,7 +97,11 @@ a = Analysis(
     hookspath=[],
     runtime_hooks=['hook_vosk.py'],
     excludes=[
-        'matplotlib', 'IPython', 'jupyter', 'notebook',
+        # matplotlib is NOT excluded - TTS/tts/utils/visual.py imports it
+        # unconditionally (already headless: matplotlib.use("Agg")), and
+        # it's reached via base_tts.py, which most TTS models inherit
+        # from - excluding it breaks core TTS imports, not just plotting.
+        'IPython', 'jupyter', 'notebook',
         'PIL', 'cv2', 'tensorflow', 'keras',
         'pytest',
     ],
