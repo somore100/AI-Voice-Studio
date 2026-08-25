@@ -111,6 +111,14 @@ a = Analysis(
     ],
     cipher=block_cipher,
     noarchive=False,
+    # 'inflect' (pulled in via TTS's text-cleaning pipeline) decorates
+    # its engine class with @typeguard.typechecked, which calls
+    # inspect.getsource() on itself at import time. PyInstaller's default
+    # bytecode-only-in-archive collection has no real source file for that
+    # to read, causing 'OSError: could not get source code'. Forcing 'py'
+    # collection mode makes PyInstaller keep/collect inflect as real loose
+    # .py source instead, which inspect.getsource() can read normally.
+    module_collection_mode={'inflect': 'py'},
 )
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
