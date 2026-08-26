@@ -134,7 +134,14 @@ a = Analysis(
     # to read, causing 'OSError: could not get source code'. Forcing 'py'
     # collection mode makes PyInstaller keep/collect inflect as real loose
     # .py source instead, which inspect.getsource() can read normally.
-    module_collection_mode={'inflect': 'py'},
+    # 'TTS' itself needs 'py' mode too, not just inflect: it uses
+    # torch.jit.script (e.g. TTS/tts/layers/generic/wavenet.py) and other
+    # inspect.getsource()-dependent patterns scattered across its own
+    # code, each of which needs real .py source on disk, not just
+    # bytecode compiled into the archive. Rather than chasing each one
+    # individually (we've now hit 3 separate cases), force the whole
+    # package to 'py' mode.
+    module_collection_mode={'inflect': 'py', 'TTS': 'py'},
 )
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
