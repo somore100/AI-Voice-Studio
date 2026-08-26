@@ -122,7 +122,7 @@ a = Analysis(
         # it's reached via base_tts.py, which most TTS models inherit
         # from - excluding it breaks core TTS imports, not just plotting.
         'IPython', 'jupyter', 'notebook',
-        'PIL', 'cv2', 'tensorflow', 'keras',
+        'cv2', 'tensorflow', 'keras',  # PIL removed - matplotlib requires it (pillow>=9 is a hard matplotlib dependency)
         'pytest',
     ],
     cipher=block_cipher,
