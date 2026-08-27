@@ -103,6 +103,87 @@ XTTS_MODEL_PATH   = os.path.join(_MODELS_BASE, "xtts_v2")
 WHISPER_MODEL_DIR = os.path.join(_MODELS_BASE, "whisper")
 VOSK_MODEL_DIR    = os.path.join(_MODELS_BASE, "vosk")
 
+
+def _get_tts_cache_dir():
+    """Return the directory Coqui TTS actually downloads models into.
+
+    This mirrors trainer.io.get_user_data_dir("tts") exactly (the function
+    TTS itself calls internally in utils/manage.py), so our "is this model
+    already downloaded?" check always looks in the same place TTS put it.
+    Previously this was guessed from the Windows-only LOCALAPPDATA env var,
+    which is empty on Linux/macOS, so downloaded models were never found by
+    the status check even though the download itself had succeeded.
+    """
+    try:
+        from trainer.io import get_user_data_dir
+        return str(get_user_data_dir("tts"))
+    except Exception:
+        # Fallback: reimplement the same platform logic trainer.io uses,
+        # in case the trainer package isn't importable yet (e.g. checking
+        # status before TTS/trainer are installed).
+        tts_home = os.environ.get("TTS_HOME")
+        xdg_home = os.environ.get("XDG_DATA_HOME")
+        if tts_home:
+            base = os.path.expanduser(tts_home)
+        elif xdg_home:
+            base = os.path.expanduser(xdg_home)
+        elif sys.platform == "win32":
+            base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+        elif sys.platform == "darwin":
+            base = os.path.expanduser("~/Library/Application Support")
+        else:
+            base = os.path.expanduser("~/.local/share")
+        return os.path.join(base, "tts")
+
+
+# ──────────────────────────────────────────────────────────────
+#  XTTS TERMS-OF-SERVICE (CPML) HANDLING
+# ──────────────────────────────────────────────────────────────
+# Coqui's own download code (TTS/utils/manage.py: create_dir_and_download_model
+# -> ask_tos) blocks with a plain input() call in the terminal to get CPML
+# license agreement before downloading XTTS-v2. That's fine in a dev
+# terminal, but:
+#   1. Our app always runs this from a background thread (see the giant
+#      comment on the eager TTS import above) - background threads have no
+#      connected stdin to read from, so input() just hangs forever with no
+#      way to answer it, silently stalling the download.
+#   2. In a packaged AppImage / .exe / .app there usually IS no terminal at
+#      all, so even on the main thread there's nowhere for the prompt to
+#      go or be answered.
+# TTS itself provides an escape hatch: if the COQUI_TOS_AGREED env var is
+# "1", tos_agreed() returns True immediately and ask_tos()/input() is never
+# called. We use that, but only after showing our own real GUI consent
+# dialog (via tkinter messagebox, on the main thread) - so the user still
+# explicitly agrees to the license, they just do it through our UI instead
+# of a terminal prompt they'd never see.
+_XTTS_TOS_MARKER = os.path.join(_MODELS_BASE, ".xtts_tos_agreed")
+
+CPML_TOS_TEXT = (
+    "XTTS-v2 is distributed under Coqui's CPML license, not a fully "
+    "open license.\n\n"
+    "By downloading this model you agree to one of the following:\n"
+    "  \u2022 You have purchased a commercial license from Coqui "
+    "(licensing@coqui.ai), OR\n"
+    "  \u2022 You agree to the terms of the non-commercial CPML "
+    "license (https://coqui.ai/cpml)\n\n"
+    "Do you agree, and want to proceed with the XTTS-v2 download?"
+)
+
+
+def _xtts_tos_already_agreed():
+    return os.environ.get("COQUI_TOS_AGREED") == "1" or os.path.isfile(_XTTS_TOS_MARKER)
+
+
+def _apply_xtts_tos_env_if_agreed():
+    """Set COQUI_TOS_AGREED for this process if the user agreed in a past run."""
+    if os.path.isfile(_XTTS_TOS_MARKER):
+        os.environ["COQUI_TOS_AGREED"] = "1"
+
+
+# Apply immediately at import time (main thread, before any background
+# thread or TTS import), so a returning user never sees the dialog again.
+_apply_xtts_tos_env_if_agreed()
+
 # ──────────────────────────────────────────────────────────────
 #  COLOURS
 # ──────────────────────────────────────────────────────────────
@@ -890,6 +971,12 @@ class AIApp:
         if "TTS pipeline" in mode:
             if not self._ensure_mic_access():
                 return
+            # If the engine selected in the TTS tab is XTTS, this pipeline
+            # will hit XTTS's CPML license requirement - resolve it here
+            # on the main thread before the loop thread starts (same
+            # reasoning as preview/save above).
+            if self._is_xtts() and not self._ensure_xtts_tos():
+                return
         self._vc_running = True
         self._vc_status.config(text="Running...", fg=GREEN)
         threading.Thread(target=self._vc_loop, daemon=True).start()
@@ -1053,6 +1140,13 @@ class AIApp:
         if not self._is_xtts():
             sid = self.get_selected_speaker_id()
             if not sid: messagebox.showerror("Error", "Please select a valid voice."); return
+        else:
+            # XTTS may need a first-time download, which requires CPML
+            # license agreement. Resolve that here on the main thread -
+            # Coqui's own code would otherwise hang on input() from
+            # inside the background preview thread below.
+            if not self._ensure_xtts_tos():
+                return
         self._start_loading("Loading model and generating speech...")
         self._set_tts_status("Generating preview...", YELLOW)
         threading.Thread(target=self._do_preview, args=(text,sid), daemon=True).start()
@@ -1091,6 +1185,9 @@ class AIApp:
         if not self._is_xtts():
             sid = self.get_selected_speaker_id()
             if not sid: messagebox.showerror("Error", "Please select a valid voice."); return
+        else:
+            if not self._ensure_xtts_tos():
+                return
         out = self.get_next_filename()
         if not out: return
         self._start_loading("Generating and saving audio...")
@@ -1346,8 +1443,7 @@ def _do_check_models(self):
     # VCTK
     self.root.after(0, lambda: self._set_model_status("vctk", None))
     vctk_local = os.path.join(_MODELS_BASE, "vctk")
-    lad = os.environ.get("LOCALAPPDATA", "")
-    tts_cache = os.path.join(lad, "tts")
+    tts_cache = _get_tts_cache_dir()
     vctk_cached = os.path.isdir(tts_cache) and any(
         "vctk" in d for d in os.listdir(tts_cache))
     ok = os.path.isdir(vctk_local) or vctk_cached
@@ -1364,7 +1460,31 @@ def _do_check_models(self):
         "Ready" if o else "Missing"))
 
 
+def _ensure_xtts_tos(self):
+    """Get CPML license agreement for XTTS-v2 via a GUI dialog (main thread
+    only - never call this from inside a background thread). Returns True
+    if the user has agreed (now or in a past run), False if they declined.
+    """
+    if _xtts_tos_already_agreed():
+        return True
+    agreed = messagebox.askyesno("XTTS-v2 License (CPML)", CPML_TOS_TEXT)
+    if agreed:
+        os.makedirs(_MODELS_BASE, exist_ok=True)
+        with open(_XTTS_TOS_MARKER, "w", encoding="utf-8") as f:
+            f.write("agreed")
+        os.environ["COQUI_TOS_AGREED"] = "1"
+    return agreed
+
+
 def _download_missing(self):
+    # Resolve XTTS's CPML license agreement here, on the main thread,
+    # BEFORE any background thread starts. Coqui's own download code
+    # would otherwise call input() from inside that thread to ask this
+    # same question - which just hangs forever (no stdin to read from a
+    # background thread, and no terminal at all in a packaged app).
+    xtts_status, _ = self._model_rows["xtts"]
+    xtts_missing = "Missing" in xtts_status.cget("text")
+    self._xtts_tos_ok = self._ensure_xtts_tos() if xtts_missing else True
     threading.Thread(target=self._do_download_missing, daemon=True).start()
 
 
@@ -1383,6 +1503,14 @@ def _do_download_missing(self):
         status, _ = self._model_rows[key]
         if "Missing" in status.cget("text"):
             missing_models.append(key)
+
+    # If the user declined the XTTS license dialog, don't attempt that
+    # download at all - Coqui's code would otherwise hang trying to ask
+    # for the same agreement via input() with no stdin available.
+    if "xtts" in missing_models and not getattr(self, "_xtts_tos_ok", True):
+        missing_models.remove("xtts")
+        self.root.after(0, lambda: self._set_model_status(
+            "xtts", False, "License declined"))
 
     # Install packages
     pkg_map = {
@@ -1424,6 +1552,9 @@ def _do_download_missing(self):
 
 
 def _download_one(self, key):
+    if key == "xtts" and not self._ensure_xtts_tos():
+        self._set_model_status("xtts", False, "License declined")
+        return
     threading.Thread(target=lambda: self._do_download_one(key), daemon=True).start()
 
 
@@ -1476,6 +1607,7 @@ AIApp._do_download_missing   = _do_download_missing
 AIApp._download_one          = _download_one
 AIApp._do_download_one       = _do_download_one
 AIApp._do_download_model     = _do_download_model
+AIApp._ensure_xtts_tos       = _ensure_xtts_tos
 
 
 if __name__ == "__main__":

@@ -32,9 +32,20 @@ except Exception as e:
 
 # ── Collect TTS / trainer data files ─────────────────────────────
 try:
-    _tts_datas = collect_data_files('TTS', include_py_files=True)
+    _tts_datas = collect_data_files('TTS')
 except Exception:
     _tts_datas = []
+
+# ── gruut's __init__.py reads a plain VERSION text file relative to its
+# own package dir at import time (_DIR / "VERSION").read_text(...) - a
+# plain data-file omission, not a .py-source issue. Without this it's
+# missing under PyInstaller and gruut (a TTS multilingual/text-cleaning
+# dependency, reached during TTS's own import chain) fails with
+# FileNotFoundError: .../gruut/VERSION
+try:
+    _gruut_datas = collect_data_files('gruut')
+except Exception:
+    _gruut_datas = []
 
 try:
     _trainer_datas = collect_data_files('trainer')
@@ -64,7 +75,7 @@ a = Analysis(
     ['main.py'],
     pathex=['.'],
     binaries=_vosk_binaries + _numpy_bins + _torch_bins + _torchaudio_bins + _tf_bins,
-    datas=_vosk_datas + _model_datas + _tts_datas + _trainer_datas + _numpy_datas + _torch_datas + _torchaudio_datas + _tf_datas,
+    datas=_vosk_datas + _model_datas + _tts_datas + _trainer_datas + _gruut_datas + _numpy_datas + _torch_datas + _torchaudio_datas + _tf_datas,
     hiddenimports=_torch_hidden + _torchaudio_hidden + _tf_hidden + [
         'TTS', 'TTS.api', 'TTS.tts', 'TTS.tts.configs.xtts_config',
         'TTS.tts.configs', 'TTS.tts.models', 'TTS.tts.utils',
@@ -86,12 +97,31 @@ a = Analysis(
     hookspath=[],
     runtime_hooks=['hook_vosk.py'],
     excludes=[
-        'matplotlib', 'IPython', 'jupyter', 'notebook',
-        'PIL', 'cv2', 'tensorflow', 'keras',
+        # matplotlib is NOT excluded - TTS/tts/utils/visual.py imports it
+        # unconditionally (already headless: matplotlib.use("Agg")), and
+        # it's reached via base_tts.py, which most TTS models inherit
+        # from - excluding it breaks core TTS imports, not just plotting.
+        'IPython', 'jupyter', 'notebook',
+        'cv2', 'tensorflow', 'keras',  # PIL removed - matplotlib requires it (pillow>=9 is a hard matplotlib dependency)
         'pytest',
     ],
     cipher=block_cipher,
     noarchive=False,
+    # 'inflect' (pulled in via TTS's text-cleaning pipeline) decorates
+    # its engine class with @typeguard.typechecked, which calls
+    # inspect.getsource() on itself at import time. PyInstaller's default
+    # bytecode-only-in-archive collection has no real source file for that
+    # to read, causing 'OSError: could not get source code'. Forcing 'py'
+    # collection mode makes PyInstaller keep/collect inflect as real loose
+    # .py source instead, which inspect.getsource() can read normally.
+    # 'TTS' itself needs 'py' mode too, not just inflect: it uses
+    # torch.jit.script (e.g. TTS/tts/layers/generic/wavenet.py) and other
+    # inspect.getsource()-dependent patterns scattered across its own
+    # code, each of which needs real .py source on disk, not just
+    # bytecode compiled into the archive. Rather than chasing each one
+    # individually (we've now hit 3 separate cases), force the whole
+    # package to 'py' mode.
+    module_collection_mode={'inflect': 'py', 'TTS': 'py'},
 )
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
