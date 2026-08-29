@@ -136,6 +136,31 @@ def _get_tts_cache_dir():
         return os.path.join(base, "tts")
 
 
+def _dir_has_substantial_file(dirpath, min_bytes=10 * 1024 * 1024):
+    """True if dirpath exists and contains at least one file >= min_bytes.
+
+    Used to tell a genuinely completed model download apart from an empty
+    or partial one. Coqui's downloader creates the destination folder
+    immediately, before any file content exists in it - so merely checking
+    os.path.isdir()/os.listdir() for the folder's presence (what this used
+    to do) reports "Ready" even for a download that was interrupted (e.g.
+    the app was closed mid-download, killing the daemon download thread)
+    and left only an empty stub folder behind. Real TTS model checkpoints
+    are tens of MB (VCTK) to ~1.8GB (XTTS-v2), so a low size threshold like
+    10MB safely distinguishes "actually downloaded" from "empty stub".
+    """
+    if not os.path.isdir(dirpath):
+        return False
+    for root, _dirs, files in os.walk(dirpath):
+        for fname in files:
+            try:
+                if os.path.getsize(os.path.join(root, fname)) >= min_bytes:
+                    return True
+            except OSError:
+                continue
+    return False
+
+
 # ──────────────────────────────────────────────────────────────
 #  XTTS TERMS-OF-SERVICE (CPML) HANDLING
 # ──────────────────────────────────────────────────────────────
@@ -490,6 +515,15 @@ class AIApp:
         root.configure(bg=BG)
         root.resizable(True, True)
         self._mic_allowed = False
+        # Tracks whether a model download is actively running in a
+        # background thread, so we can warn before the user closes the
+        # app mid-download - closing kills the (daemon) download thread
+        # instantly with no resume, leaving a partial/empty model folder
+        # behind that looked like it was "installed" (see _do_check_models
+        # size-based fix for why that's now caught, but prevention here
+        # is better than detecting it after the fact).
+        self._download_in_progress = False
+        root.protocol("WM_DELETE_WINDOW", self._on_close_request)
 
         style = ttk.Style(); style.theme_use("clam")
         style.configure("TCombobox",
@@ -528,6 +562,18 @@ class AIApp:
 
         root.after(150, lambda: self._scroller.bind_all_mousewheel(self._inner))
         root.after(400, self._request_mic_permission)
+
+    def _on_close_request(self):
+        if self._download_in_progress:
+            proceed = messagebox.askyesno(
+                "Download in progress",
+                "A model download is still running. Closing now will "
+                "cancel it and leave an incomplete model folder that "
+                "you'll need to re-download from scratch.\n\n"
+                "Close anyway?")
+            if not proceed:
+                return
+        self.root.destroy()
 
     def _request_mic_permission(self):
         ok, msg = check_mic_access()
@@ -1436,7 +1482,13 @@ def _do_check_models(self):
     self.root.after(0, lambda: self._set_model_status("whisper", None))
     whisper_local = os.path.join(_MODELS_BASE, "whisper", "small.pt")
     whisper_cache = os.path.join(os.path.expanduser("~"), ".cache", "whisper", "small.pt")
-    ok = os.path.isfile(whisper_local) or os.path.isfile(whisper_cache)
+    min_whisper_bytes = 200 * 1024 * 1024  # "small" checkpoint is ~460MB
+    def _file_ok(p):
+        try:
+            return os.path.isfile(p) and os.path.getsize(p) >= min_whisper_bytes
+        except OSError:
+            return False
+    ok = _file_ok(whisper_local) or _file_ok(whisper_cache)
     self.root.after(0, lambda o=ok: self._set_model_status("whisper", o,
         "Ready" if o else "Missing"))
 
@@ -1444,18 +1496,20 @@ def _do_check_models(self):
     self.root.after(0, lambda: self._set_model_status("vctk", None))
     vctk_local = os.path.join(_MODELS_BASE, "vctk")
     tts_cache = _get_tts_cache_dir()
-    vctk_cached = os.path.isdir(tts_cache) and any(
-        "vctk" in d for d in os.listdir(tts_cache))
-    ok = os.path.isdir(vctk_local) or vctk_cached
+    vctk_cache_dirs = [os.path.join(tts_cache, d) for d in
+        (os.listdir(tts_cache) if os.path.isdir(tts_cache) else []) if "vctk" in d]
+    vctk_cached = any(_dir_has_substantial_file(d) for d in vctk_cache_dirs)
+    ok = _dir_has_substantial_file(vctk_local) or vctk_cached
     self.root.after(0, lambda o=ok: self._set_model_status("vctk", o,
         "Ready" if o else "Missing"))
 
     # XTTS
     self.root.after(0, lambda: self._set_model_status("xtts", None))
     xtts_local = os.path.join(_MODELS_BASE, "xtts_v2")
-    xtts_cached = os.path.isdir(tts_cache) and any(
-        "xtts_v2" in d for d in os.listdir(tts_cache))
-    ok = os.path.isdir(xtts_local) or xtts_cached
+    xtts_cache_dirs = [os.path.join(tts_cache, d) for d in
+        (os.listdir(tts_cache) if os.path.isdir(tts_cache) else []) if "xtts_v2" in d]
+    xtts_cached = any(_dir_has_substantial_file(d) for d in xtts_cache_dirs)
+    ok = _dir_has_substantial_file(xtts_local) or xtts_cached
     self.root.after(0, lambda o=ok: self._set_model_status("xtts", o,
         "Ready" if o else "Missing"))
 
@@ -1490,6 +1544,7 @@ def _download_missing(self):
 
 def _do_download_missing(self):
     self.root.after(0, lambda: self._dl_bar.start(12))
+    self._download_in_progress = True
 
     missing_pkgs  = []
     missing_models = []
@@ -1542,10 +1597,14 @@ def _do_download_missing(self):
 
     # Download models
     for key in missing_models:
-        self.root.after(0, lambda k=key: self._dl_label.config(
-            text=f"Downloading {k} model...", fg=YELLOW))
+        label = f"Downloading {key} model..."
+        if key == "xtts":
+            label = ("Downloading XTTS-v2 (~1.8GB - this can take several "
+                      "minutes, please don't close the app)...")
+        self.root.after(0, lambda t=label: self._dl_label.config(text=t, fg=YELLOW))
         self._do_download_model(key)
 
+    self._download_in_progress = False
     self.root.after(0, lambda: self._dl_bar.stop())
     self.root.after(0, lambda: self._dl_label.config(text="Done!", fg=GREEN))
     self.root.after(0, self._check_models)
@@ -1560,9 +1619,14 @@ def _download_one(self, key):
 
 def _do_download_one(self, key):
     self.root.after(0, lambda: self._dl_bar.start(12))
-    self.root.after(0, lambda: self._dl_label.config(
-        text=f"Downloading {key}...", fg=YELLOW))
+    self._download_in_progress = True
+    label = f"Downloading {key}..."
+    if key == "xtts":
+        label = ("Downloading XTTS-v2 (~1.8GB - this can take several "
+                  "minutes, please don't close the app)...")
+    self.root.after(0, lambda t=label: self._dl_label.config(text=t, fg=YELLOW))
     self._do_download_model(key)
+    self._download_in_progress = False
     self.root.after(0, lambda: self._dl_bar.stop())
     self.root.after(0, lambda: self._dl_label.config(text="Done!", fg=GREEN))
     self.root.after(0, self._check_models)
