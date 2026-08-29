@@ -77,6 +77,13 @@ a = Analysis(
     binaries=_vosk_binaries + _numpy_bins + _torch_bins + _torchaudio_bins + _tf_bins,
     datas=_vosk_datas + _model_datas + _tts_datas + _trainer_datas + _gruut_datas + _numpy_datas + _torch_datas + _torchaudio_datas + _tf_datas,
     hiddenimports=_torch_hidden + _torchaudio_hidden + _tf_hidden + [
+        # Our own engines/ package (VCTK/XTTS plugin architecture) -
+        # a normal local package import in main.py, so PyInstaller's
+        # static analysis should already catch it via Analysis(['main.py'],
+        # pathex=['.']), but listed explicitly since this project has
+        # repeatedly hit cases where 'should be automatic' wasn't.
+        'engines', 'engines.base', 'engines.paths', 'engines.registry',
+        'engines.coqui_vctk', 'engines.coqui_xtts',
         'TTS', 'TTS.api', 'TTS.tts', 'TTS.tts.configs.xtts_config',
         'TTS.tts.configs', 'TTS.tts.models', 'TTS.tts.utils',
         'TTS.tts.layers', 'TTS.utils.audio', 'TTS.utils.io',
