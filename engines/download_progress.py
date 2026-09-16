@@ -52,7 +52,13 @@ def progress_hook(callback):
                 return
             total = self.total or 0
             step = max(int(total * 0.005), 256 * 1024) if total else 256 * 1024
-            if self.n - self._last_reported >= step or self.n >= total:
+            # "final" only makes sense when we actually know the total -
+            # for unknown-size downloads (total=0), self.n >= total would
+            # be true on every single call and defeat the step throttle
+            # entirely, firing the callback on every ~1KB chunk instead
+            # of every ~256KB.
+            is_final = total > 0 and self.n >= total
+            if self.n - self._last_reported >= step or is_final:
                 self._last_reported = self.n
                 try:
                     callback(self.n, total)
