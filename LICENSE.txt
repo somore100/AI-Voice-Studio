@@ -1,21 +1,131 @@
-MIT License
+# AI-Voice-Studio Source-Available License v1.0
 
-Copyright (c) 2026 Somore100
+Copyright © 2026 somore100. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+## 1. Definitions
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+In this License:
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+* **“Software”** means the AI-Voice-Studio source code, documentation, original assets, and other materials distributed by the Copyright Holder under this License.
+* **“Copyright Holder”** means the copyright owner of the Software.
+* **“Fork”** means a modified or independently maintained version of the Software.
+* **“Addon”** means a plugin, extension, integration, module, theme, script, or other separate work that extends or interacts with the Software without incorporating a substantial portion of its source code.
+* **“Commercial Product”** means a product or service offered for payment or other commercial benefit.
+* **“Substantially Derived Version”** means a version of the Software that incorporates a substantial portion of the Software's source code or is primarily based on the Software's code or structure.
+
+## 2. Permissions
+
+Subject to the restrictions in this License, you are permitted to:
+
+1. View and study the Software.
+2. Use the Software for personal, educational, research, and commercial purposes.
+3. Modify the Software for personal, educational, research, or commercial purposes.
+4. Create and distribute non-commercial Forks.
+5. Create Addons, plugins, extensions, integrations, and other independent works.
+6. Use the Software as a component of a larger Commercial Product.
+7. Use the Software internally within a commercial organization.
+8. Distribute applications or services that use the Software as a component, provided that the Software itself is not being commercially distributed as the primary product or as a Substantially Derived Version.
+9. Contribute improvements and modifications to the project.
+
+## 3. Commercial Distribution Restrictions
+
+You may **not**, without prior written permission from the Copyright Holder:
+
+1. Sell AI-Voice-Studio itself.
+2. Sell or commercially distribute a Fork that is a Substantially Derived Version.
+3. Rebrand AI-Voice-Studio or a Substantially Derived Version and sell it as a competing product.
+4. Package AI-Voice-Studio itself as a paid downloadable or installable product.
+5. Offer a paid hosted or managed service where AI-Voice-Studio itself, rather than an independent service built around it, is the primary product being sold.
+6. Create a commercial distribution that falsely represents itself as the official AI-Voice-Studio project or as being produced, endorsed, or maintained by the Copyright Holder.
+
+These restrictions do **not** prohibit commercial products that independently use or integrate with AI-Voice-Studio.
+
+## 4. Commercial Products and Integrations
+
+Commercial use of AI-Voice-Studio is explicitly permitted.
+
+You may build, sell, license, host, or otherwise commercially operate a larger product or service that uses AI-Voice-Studio, provided that:
+
+* the larger product provides substantial functionality beyond AI-Voice-Studio itself;
+* AI-Voice-Studio is not simply repackaged and sold as the product;
+* the commercial product does not contain a Substantially Derived Version of AI-Voice-Studio unless permission has been obtained; and
+* the commercial product does not falsely imply that it is the official AI-Voice-Studio product.
+
+Commercial Addons, plugins, extensions, integrations, and services are permitted when they are sufficiently independent and do not contain a substantial portion of the Software's source code.
+
+## 5. Forks and Community Development
+
+Non-commercial Forks are encouraged.
+
+Forks may modify, improve, experiment with, and redistribute the Software for free.
+
+Forks must clearly indicate that they are independent projects and must not imply official affiliation, endorsement, or authorship by the Copyright Holder.
+
+## 6. Attribution
+
+When redistributing the Software or a Fork, you must:
+
+* retain this License;
+* retain applicable copyright notices;
+* clearly identify significant modifications where reasonably practical.
+
+You may not remove or alter copyright notices belonging to the Copyright Holder.
+
+## 7. Name and Branding
+
+The name **“AI-Voice-Studio”**, associated logos, artwork, and official branding are not automatically licensed for use as branding for derivative or competing products.
+
+You may truthfully describe a project as:
+
+* “based on AI-Voice-Studio”; or
+* “AI-Voice-Studio-compatible”
+
+provided that such wording does not imply official affiliation, endorsement, or authorship.
+
+## 8. Third-Party Components
+
+AI-Voice-Studio may use third-party software, libraries, models, model weights, APIs, datasets, or other components.
+
+Such components are **not necessarily covered by this License** and remain subject to their respective licenses and terms.
+
+This License does not grant rights to third-party components beyond the rights provided by their respective licenses.
+
+Users and distributors are responsible for complying with applicable third-party licenses.
+
+## 9. Contributions
+
+Unless a separate written agreement states otherwise, contributions submitted to AI-Voice-Studio are provided under this License.
+
+By submitting a contribution, you represent that you have the necessary rights to submit the contribution under these terms.
+
+## 10. No Warranty
+
+The Software is provided **“AS IS”**, without warranty of any kind, express or implied.
+
+To the maximum extent permitted by applicable law, the Copyright Holder shall not be liable for any claim, damages, or other liability arising from the use of the Software.
+
+## 11. Termination
+
+Your rights under this License terminate automatically if you violate its terms.
+
+Upon termination, you must cease activities that are no longer permitted under this License.
+
+Permissions may be reinstated if the violation is cured and the Copyright Holder provides written permission.
+
+## 12. Reservation of Rights
+
+All rights not expressly granted by this License are reserved by the Copyright Holder.
+
+Commercial distribution of AI-Voice-Studio itself or a Substantially Derived Version requires prior written permission from the Copyright Holder.
+
+Commercial use of AI-Voice-Studio as part of an independent larger product or service is permitted under Section 4.
+
+## 13. License Status
+
+AI-Voice-Studio is **source-available software** and is **not an OSI-approved Open Source license**.
+
+This License is intended to allow people to inspect, learn from, modify, integrate, and build commercial products around AI-Voice-Studio while preventing commercial redistribution of AI-Voice-Studio itself or substantially derived commercial versions without permission.
+
+---
+
+**Copyright © 2026 somore100. All rights reserved.**
