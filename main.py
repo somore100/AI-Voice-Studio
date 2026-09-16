@@ -1557,19 +1557,32 @@ def _do_download_model(self, key):
             self.root.after(0, lambda: self._set_model_status("whisper", True, "Ready"))
         elif key in TTS_ENGINES:
             def on_progress(downloaded, total, k=key):
-                if not total:
-                    return
-                pct = min(100, int(downloaded * 100 / total))
                 mb_done = downloaded / (1024 * 1024)
-                mb_total = total / (1024 * 1024)
-                def _update():
-                    if str(self._dl_bar["mode"]) != "determinate":
-                        self._dl_bar.stop()
-                        self._dl_bar.config(mode="determinate", maximum=100)
-                    self._dl_bar["value"] = pct
-                    self._dl_label.config(
-                        text=f"Downloading {k}... {mb_done:.0f} MB / "
-                             f"{mb_total:.0f} MB ({pct}%)", fg=YELLOW)
+                if total:
+                    # Known size (VCTK, and any future engine whose host
+                    # sends Content-Length): real determinate % bar.
+                    pct = min(100, int(downloaded * 100 / total))
+                    mb_total = total / (1024 * 1024)
+                    def _update():
+                        if str(self._dl_bar["mode"]) != "determinate":
+                            self._dl_bar.stop()
+                            self._dl_bar.config(mode="determinate", maximum=100)
+                        self._dl_bar["value"] = pct
+                        self._dl_label.config(
+                            text=f"Downloading {k}... {mb_done:.0f} MB / "
+                                 f"{mb_total:.0f} MB ({pct}%)", fg=YELLOW)
+                else:
+                    # Unknown size (XTTS-v2's host omits Content-Length) -
+                    # no % is possible, so keep the bar animating in
+                    # indeterminate mode and just show a live MB counter
+                    # instead of freezing on stale "0 MB / 0 MB" numbers.
+                    def _update():
+                        if str(self._dl_bar["mode"]) != "indeterminate":
+                            self._dl_bar.config(mode="indeterminate")
+                            self._dl_bar.start(12)
+                        self._dl_label.config(
+                            text=f"Downloading {k}... {mb_done:.0f} MB "
+                                 f"downloaded (total size unknown)", fg=YELLOW)
                 self.root.after(0, _update)
 
             TTS_ENGINES[key].download(progress_cb=on_progress)
