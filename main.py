@@ -118,6 +118,10 @@ VOSK_MODEL_DIR    = os.path.join(_MODELS_BASE, "vosk")
 from engines.registry import get_tts_engines
 TTS_ENGINES = get_tts_engines(_MODELS_BASE)
 
+# Captions/subtitles generation (ffmpeg extraction + Whisper word-level
+# transcription + caption chunking + .srt/.vtt writers) - see subtitles.py.
+import subtitles
+
 
 # ──────────────────────────────────────────────────────────────
 #  PER-ENGINE LICENSE (TOS) HANDLING
@@ -470,6 +474,7 @@ class AIApp:
         self._build_models_frame()
         self._build_tts_frame()
         self._build_stt_frame()
+        self._build_captions_frame()
         self._build_translator_frame()
         self._build_voice_changer_frame()
         self._build_footer()
@@ -781,6 +786,128 @@ class AIApp:
         self._set_stt_status("Listening...", GREEN)
         threading.Thread(target=self._listen_loop, daemon=True).start()
         self.start_equalizer()
+
+    def _build_captions_frame(self):
+        f = self._lf("Captions / Subtitles", fg_title=ORANGE)
+        self._label(f, "Generate .srt/.vtt captions from an audio or video "
+                        "file (uses Whisper - separate from the live mic "
+                        "STT above).", fg=FG_DIM, font=("Segoe UI",8)
+                    ).pack(anchor="w", padx=2, pady=(0,6))
+
+        frow = tk.Frame(f, bg=CARD); frow.pack(fill="x", padx=2, pady=(0,4))
+        self._btn(frow, "Choose File...", self._captions_choose_file,
+                   color=BLUE, fg=BG).pack(side="left")
+        self.captions_file_var = tk.StringVar(value="No file selected")
+        tk.Label(frow, textvariable=self.captions_file_var, bg=CARD, fg=FG,
+                 font=("Segoe UI",9), anchor="w"
+                 ).pack(side="left", padx=8, fill="x", expand=True)
+
+        opts = tk.Frame(f, bg=CARD); opts.pack(fill="x", padx=2, pady=(0,4))
+        self._label(opts, "Spoken language:").pack(side="left")
+        self.captions_lang_var = tk.StringVar(value=LANG_DISPLAY[0])
+        ttk.Combobox(opts, textvariable=self.captions_lang_var,
+                     values=LANG_DISPLAY, state="readonly",
+                     width=16, font=("Segoe UI",9)).pack(side="left", padx=(4,14))
+        self._label(opts, "Format:").pack(side="left")
+        self.captions_format_var = tk.StringVar(value="SRT")
+        ttk.Combobox(opts, textvariable=self.captions_format_var,
+                     values=["SRT", "VTT"], state="readonly",
+                     width=6, font=("Segoe UI",9)).pack(side="left", padx=4)
+
+        st = tk.Frame(f, bg=CARD); st.pack(fill="x", padx=2, pady=(4,0))
+        self.captions_status = self._label(st, "Choose a file to begin", fg=FG_DIM)
+        self.captions_status.pack(side="left")
+
+        self._btn(f, "Generate Captions", self._captions_generate,
+                   color=GREEN, fg=BG, bold=True).pack(pady=(8,2))
+
+        if not WHISPER_AVAILABLE:
+            self._label(f, "Whisper is required for captions and isn't "
+                            "installed (pip install openai-whisper).",
+                        fg=RED, font=("Segoe UI",8)).pack(anchor="w", padx=2)
+        elif not subtitles.ffmpeg_path():
+            self._label(f, "ffmpeg wasn't found on your system PATH - "
+                            "captions need it to read audio/video files.",
+                        fg=YELLOW, font=("Segoe UI",8)).pack(anchor="w", padx=2)
+
+    def _captions_choose_file(self):
+        path = filedialog.askopenfilename(
+            title="Choose audio or video file",
+            filetypes=[("Audio/Video", "*.mp4 *.mkv *.mov *.avi *.webm "
+                                        "*.wav *.mp3 *.m4a *.flac *.ogg"),
+                       ("All files", "*.*")])
+        if not path:
+            return
+        self._captions_input_path = path
+        self.captions_file_var.set(os.path.basename(path))
+        self.captions_status.config(text="Ready", fg=FG_DIM)
+
+    def _captions_generate(self):
+        path = getattr(self, "_captions_input_path", None)
+        if not path:
+            messagebox.showerror("No file", "Choose an audio or video file first.")
+            return
+        if not WHISPER_AVAILABLE:
+            messagebox.showerror("Whisper not installed",
+                "Captions need Whisper.\n\npip install openai-whisper")
+            return
+        if not subtitles.ffmpeg_path():
+            messagebox.showerror("ffmpeg not found",
+                "Captions need ffmpeg to extract audio from your file.\n\n"
+                "Install it and make sure it's on your system PATH, "
+                "then try again.")
+            return
+        threading.Thread(target=self._do_generate_captions,
+                          args=(path,), daemon=True).start()
+
+    def _do_generate_captions(self, path):
+        self.root.after(0, lambda: self.captions_status.config(
+            text="Extracting audio...", fg=YELLOW))
+        tmp_wav = os.path.join(tempfile.gettempdir(),
+                                f"avs_captions_{int(time.time())}.wav")
+        try:
+            subtitles.extract_audio(path, tmp_wav)
+
+            self.root.after(0, lambda: self.captions_status.config(
+                text="Loading Whisper model...", fg=YELLOW))
+            model = get_whisper_model()
+            wlang = LANG_WHISPER[self.captions_lang_var.get()]
+
+            self.root.after(0, lambda: self.captions_status.config(
+                text="Transcribing... this can take a while for longer "
+                     "files", fg=YELLOW))
+            words = subtitles.transcribe_words(model, tmp_wav, language=wlang)
+            if not words:
+                raise RuntimeError("No speech detected in this file.")
+
+            captions = subtitles.chunk_into_captions(words)
+
+            fmt = self.captions_format_var.get()
+            ext = ".srt" if fmt == "SRT" else ".vtt"
+            out_path = os.path.splitext(path)[0] + ext
+            if fmt == "SRT":
+                subtitles.write_srt(captions, out_path)
+            else:
+                subtitles.write_vtt(captions, out_path)
+
+            self.root.after(0, lambda: self.captions_status.config(
+                text="Done!", fg=GREEN))
+            self.root.after(0, lambda: messagebox.showinfo(
+                "Captions saved",
+                f"Saved {len(captions)} captions to:\n{out_path}"))
+        except Exception as e:
+            print(f"[AVS] Captions failed: {e}")
+            traceback.print_exc()
+            self.root.after(0, lambda: self.captions_status.config(
+                text="Error", fg=RED))
+            self.root.after(0, lambda err=str(e): messagebox.showerror(
+                "Captions failed", err))
+        finally:
+            if os.path.isfile(tmp_wav):
+                try:
+                    os.remove(tmp_wav)
+                except OSError:
+                    pass
 
     def _build_translator_frame(self):
         f = self._lf("Translator", fg_title=ORANGE)

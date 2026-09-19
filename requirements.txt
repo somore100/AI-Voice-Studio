@@ -9,3 +9,10 @@ SpeechRecognition
 PyAudio
 numpy
 librosa
+
+# Captions/subtitles feature (subtitles.py) needs the ffmpeg *binary* on
+# PATH to extract audio from video/audio files - this is a system
+# dependency, not a pip package (e.g. `sudo apt install ffmpeg`,
+# `brew install ffmpeg`, or a Windows build from ffmpeg.org). The app
+# checks for it at runtime and shows a clear error if it's missing,
+# rather than requiring it just to launch.
