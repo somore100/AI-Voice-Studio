@@ -15,6 +15,31 @@ from .paths import get_tts_cache_dir
 
 _instance = None  # lazy-loaded TTS() instance, cached for reuse
 
+# XTTS-v2's checkpoint ships with a fixed set of built-in preset speaker
+# latents baked in (accessible as `tts.speakers` / `speaker_manager
+# .speaker_names` once the model is loaded). This list is a static
+# property of every XTTS-v2 v2.0.x download - it doesn't require loading
+# the (large, slow) model just to populate a voice dropdown. Source:
+# https://coqui-tts.readthedocs.io/en/latest/models/xtts.html
+PRESET_SPEAKERS = [
+    "Claribel Dervla", "Daisy Studious", "Gracie Wise", "Tammie Ema",
+    "Alison Dietlinde", "Ana Florence", "Annmarie Nele", "Asya Anara",
+    "Brenda Stern", "Gitta Nikolina", "Henriette Usha", "Sofia Hellen",
+    "Tammy Grit", "Tanja Adelina", "Vjollca Johnnie", "Andrew Chipper",
+    "Badr Odhiambo", "Dionisio Schuyler", "Royston Min", "Viktor Eka",
+    "Abrahan Mack", "Adde Michal", "Baldur Sanjin", "Craig Gutsy",
+    "Damien Black", "Gilberto Mathias", "Ilkin Urbano", "Kazuhiko Atallah",
+    "Ludvig Milivoj", "Suad Qasim", "Torcull Diarmuid", "Viktor Menelaos",
+    "Zacharie Aimilios", "Nova Hogarth", "Maja Ruoho", "Uta Obando",
+    "Lidiya Szekeres", "Chandra MacFarland", "Szofi Granger",
+    "Camilla Holmström", "Lilya Stainthorpe", "Zofija Kendrick",
+    "Narelle Moon", "Barbora MacLean", "Alexandra Hisakawa", "Alma María",
+    "Rosemary Okafor", "Ige Behringer", "Filip Traverse",
+    "Damjan Chapman", "Wulf Carlevaro", "Aaron Dreschner", "Kumar Dahl",
+    "Eugenio Mataracı", "Ferran Simen", "Xavier Hayasaka", "Luis Moray",
+    "Marcos Rudaski",
+]
+
 CPML_TEXT = (
     "XTTS-v2 is distributed under Coqui's CPML license, not a fully "
     "open license.\n\n"
@@ -75,11 +100,20 @@ def build(models_base):
         return _instance
 
     def list_voices():
-        return []  # XTTS uses language, not a fixed speaker list
+        return list(PRESET_SPEAKERS)
 
     def synthesize(text, voice, out_path, language=None):
+        # XTTS has no "default" voice of its own - it's a cloning model,
+        # so it always needs either a speaker_wav (clone from audio) or a
+        # speaker name (one of the built-in presets above). Without one
+        # of those, Coqui's own code raises "Neither speaker_wav nor
+        # speaker_id was specified" - so if we weren't given a valid
+        # preset name, fall back to the first preset rather than ever
+        # calling tts_to_file() with neither.
+        speaker = voice if voice in PRESET_SPEAKERS else PRESET_SPEAKERS[0]
         _get_instance().tts_to_file(
-            text=text, language=language or "en", file_path=out_path)
+            text=text, language=language or "en", speaker=speaker,
+            file_path=out_path)
 
     return EngineSpec(
         key="xtts",

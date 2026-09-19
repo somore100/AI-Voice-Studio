@@ -628,7 +628,17 @@ class AIApp:
         self._xtts_panel = tk.Frame(f, bg=CARD)
         self._label(self._xtts_panel,
                     "XTTS-v2  17 languages including Slovenian, Russian, English",
-                    fg=FG_DIM, font=("Segoe UI",8)).pack(anchor="w", padx=4, pady=4)
+                    fg=FG_DIM, font=("Segoe UI",8)).pack(anchor="w", padx=4, pady=(4,0))
+        xvrow = tk.Frame(self._xtts_panel, bg=CARD); xvrow.pack(fill="x", padx=4, pady=4)
+        self._label(xvrow, "Voice:").pack(side="left")
+        xtts_voices = TTS_ENGINES["xtts"].list_voices()
+        self.xtts_speaker_var = tk.StringVar(
+            value=xtts_voices[0] if xtts_voices else "")
+        ttk.Combobox(xvrow, textvariable=self.xtts_speaker_var,
+                     values=xtts_voices, state="readonly",
+                     width=22, font=("Segoe UI",9)).pack(side="left", padx=(4,10))
+        self._label(xvrow, "(built-in preset voice - not cloned from audio)",
+                    fg=FG_DIM, font=("Segoe UI",8)).pack(side="left")
 
         # Speed slider
         spd = tk.Frame(f, bg=CARD); spd.pack(fill="x", padx=2, pady=4)
@@ -1116,7 +1126,8 @@ class AIApp:
                             TTS_ENGINES["vctk"].synthesize(text, sid, tmp.name)
                         else:
                             lang = LANG_XTTS.get(self.xtts_lang_var.get(), "en")
-                            TTS_ENGINES["xtts"].synthesize(text, None, tmp.name, lang)
+                            TTS_ENGINES["xtts"].synthesize(
+                                text, self.xtts_speaker_var.get(), tmp.name, lang)
                         pygame.mixer.music.load(tmp.name)
                         pygame.mixer.music.play()
                         while pygame.mixer.music.get_busy() and self._vc_running:
@@ -1245,7 +1256,7 @@ class AIApp:
             if self._is_xtts():
                 lang = LANG_XTTS[self.xtts_lang_var.get()]
                 if lang not in XTTS_SUPPORTED: lang = "en"
-                TTS_ENGINES["xtts"].synthesize(text, None, tmp.name, lang)
+                TTS_ENGINES["xtts"].synthesize(text, self.xtts_speaker_var.get(), tmp.name, lang)
             else:
                 TTS_ENGINES["vctk"].synthesize(text, sid, tmp.name)
             pygame.mixer.music.load(tmp.name); pygame.mixer.music.play()
@@ -1286,7 +1297,7 @@ class AIApp:
             if self._is_xtts():
                 lang = LANG_XTTS[self.xtts_lang_var.get()]
                 if lang not in XTTS_SUPPORTED: lang = "en"
-                TTS_ENGINES["xtts"].synthesize(text, None, out, lang)
+                TTS_ENGINES["xtts"].synthesize(text, self.xtts_speaker_var.get(), out, lang)
             else:
                 TTS_ENGINES["vctk"].synthesize(text, sid, out)
             self.root.after(0, self._stop_loading)
