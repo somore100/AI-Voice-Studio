@@ -252,7 +252,19 @@ LANG_VOSK    = {l[0]: l[2] for l in LANGUAGES}
 LANG_XTTS    = {l[0]: l[3] for l in LANGUAGES}
 LANG_TR      = {l[0]: l[4] for l in LANGUAGES}
 
-XTTS_SUPPORTED = {"en","sl","ru","de","fr","es","it","ja","zh","pt","pl","cs","nl","ar","ko","hr","tr","hu","ro"}
+# XTTS-v2 genuinely supports only these 17 languages (Coqui's own docs:
+# en, es, fr, de, it, pt, pl, tr, ru, nl, cs, ar, zh-cn, hu, ko, ja, hi).
+# Two languages in our LANGUAGES table above - Slovenian and Croatian -
+# are NOT among them, despite the old XTTS_SUPPORTED set (wrongly)
+# including "sl"/"hr" and omitting "hi". That let unsupported codes
+# reach Coqui's code, which raises: "Language sl is not supported."
+# "hu"/"ro" below were dead entries with no matching LANGUAGES row.
+XTTS_SUPPORTED = {"en","ru","de","fr","es","it","ja","zh","pt","pl","cs","nl","ar","ko","tr"}
+
+# Languages selectable for XTTS specifically - filtered to what the
+# model actually supports, so an unsupported language can't be picked
+# in the first place (rather than silently falling back to English).
+XTTS_LANG_DISPLAY = [name for name in LANG_DISPLAY if LANG_XTTS[name] in XTTS_SUPPORTED]
 
 # ──────────────────────────────────────────────────────────────
 #  VCTK SPEAKER MAP
@@ -593,9 +605,9 @@ class AIApp:
 
         self._xtts_lang_frame = tk.Frame(eng, bg=CARD)
         self._label(self._xtts_lang_frame, "Language:").pack(side="left")
-        self.xtts_lang_var = tk.StringVar(value=LANG_DISPLAY[0])
+        self.xtts_lang_var = tk.StringVar(value=XTTS_LANG_DISPLAY[0])
         ttk.Combobox(self._xtts_lang_frame, textvariable=self.xtts_lang_var,
-                     values=LANG_DISPLAY, state="readonly",
+                     values=XTTS_LANG_DISPLAY, state="readonly",
                      width=16, font=("Segoe UI",9)).pack(side="left", padx=4)
 
         self._label(f, "Enter text to speak:").pack(anchor="w", padx=2, pady=(2,2))
@@ -627,7 +639,8 @@ class AIApp:
 
         self._xtts_panel = tk.Frame(f, bg=CARD)
         self._label(self._xtts_panel,
-                    "XTTS-v2  17 languages including Slovenian, Russian, English",
+                    f"XTTS-v2  {len(XTTS_LANG_DISPLAY)} of the app's languages "
+                    "supported (see dropdown above)",
                     fg=FG_DIM, font=("Segoe UI",8)).pack(anchor="w", padx=4, pady=(4,0))
         xvrow = tk.Frame(self._xtts_panel, bg=CARD); xvrow.pack(fill="x", padx=4, pady=4)
         self._label(xvrow, "Voice:").pack(side="left")
@@ -749,7 +762,8 @@ class AIApp:
         util = tk.Frame(f, bg=CARD); util.pack(pady=(0,6))
         self._btn(util, "Copy",  self.copy_transcript,  color=BLUE,  fg=BG, bold=True).pack(side="left", padx=4)
         self._btn(util, "Clear", self.clear_transcript, color=SURFACE).pack(side="left", padx=4)
-        self._btn(util, "Mini",  self.minimized_mode,   color=SURFACE).pack(side="left", padx=4)
+        self.mini_btn = self._btn(util, "Mini",  self.minimized_mode,   color=SURFACE)
+        self.mini_btn.pack(side="left", padx=4)
         self._stt_set_state("idle")
 
     def _stt_set_state(self, state):
@@ -1405,9 +1419,22 @@ class AIApp:
         self.root.after(0, lambda: self.live_word_var.set(""))
 
     def minimized_mode(self):
-        self.transcript.master.pack_forget()
-        self.eq_canvas.pack(pady=5); self.create_equalizer()
-        if self.is_listening: self.start_equalizer()
+        # Was a one-way trip before: it always hid the transcript and
+        # showed the equalizer, with no code path back - "Mini" needs to
+        # actually be a toggle so it can return to the text view.
+        self._mini_mode = not getattr(self, "_mini_mode", False)
+        if self._mini_mode:
+            self.transcript.master.pack_forget()
+            self.eq_canvas.pack(pady=5, before=self._stt_btn_frame)
+            self.create_equalizer()
+            if self.is_listening: self.start_equalizer()
+            self.mini_btn.config(text="Full")
+        else:
+            self.stop_equalizer()
+            self.eq_canvas.pack_forget()
+            self.transcript.master.pack(fill="x", padx=2, pady=(0,4),
+                                         before=self._stt_btn_frame)
+            self.mini_btn.config(text="Mini")
 
     def create_equalizer(self):
         self.eq_canvas.delete("all"); self.eq_bars = []
