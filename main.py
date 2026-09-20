@@ -12,6 +12,7 @@ import json
 import traceback
 import speech_recognition as sr
 import pygame
+from contextlib import contextmanager
 
 # ──────────────────────────────────────────────────────────────
 #  EAGER TORCH IMPORT (must happen on the main thread, before any
@@ -389,7 +390,12 @@ def check_mic_access():
             pa.terminate()
             return False, "No microphone detected on this system."
         try:
-            stream = pa.open(format=pyaudio.paInt16, channels=1, rate=16000,
+            # Use the device's own native rate rather than forcing
+            # 16000 - some ALSA devices reject that exact rate
+            # (paInvalidSampleRate) even though they work fine at their
+            # own default, and everything downstream resamples anyway.
+            native_rate = int(info.get("defaultSampleRate") or 16000)
+            stream = pa.open(format=pyaudio.paInt16, channels=1, rate=native_rate,
                               input=True, frames_per_buffer=1024,
                               input_device_index=info["index"])
             stream.stop_stream()
@@ -533,6 +539,52 @@ class AIApp:
         if show_mic_blocked_dialog(self.root, msg):
             return self._ensure_mic_access()   # user clicked Retry
         return False
+
+    @contextmanager
+    def _open_mic(self, mic_index):
+        """Open a Microphone as a context manager, guarding against two
+        real bugs that combined into the packaged-AppImage STT crash:
+
+        1. We used to force `sample_rate=16000` on every Microphone()
+           call. Some ALSA devices reject that exact rate outright
+           (PortAudio's "paInvalidSampleRate"), even though the same
+           device works fine at its own native rate. We already
+           resample to 16kHz downstream via `get_raw_data(convert_rate=
+           16000, ...)`, so there's no need to force the capture rate -
+           letting SpeechRecognition auto-pick the device's own
+           defaultSampleRate avoids the mismatch entirely.
+
+        2. speech_recognition's own Microphone.__enter__() has a bug:
+           if opening the PyAudio stream fails for any reason, it
+           catches the exception, terminates PyAudio... and then still
+           returns normally instead of re-raising. That leaves
+           `source.stream` as None with no exception raised, so calling
+           code sails into adjust_for_ambient_noise() and hits an
+           AssertionError there ("must be entered before adjusting"),
+           and then __exit__() hits a second crash (AttributeError:
+           'NoneType' object has no attribute 'close') trying to close
+           a stream that was never opened. We check for that failure
+           state ourselves right after __enter__() and turn it into one
+           clear, catchable RuntimeError instead of that double crash.
+        """
+        source = sr.Microphone(device_index=mic_index)
+        source.__enter__()
+        try:
+            if source.stream is None:
+                raise RuntimeError(
+                    "Could not open this microphone - it may be busy, "
+                    "disconnected, or rejected by the audio driver. Try "
+                    "picking a different microphone from the dropdown."
+                )
+            yield source
+        finally:
+            if source.stream is not None:
+                source.__exit__(None, None, None)
+            else:
+                try:
+                    source.audio.terminate()
+                except Exception:
+                    pass
 
     def _lf(self, title, fg_title=PURPLE):
         f = tk.LabelFrame(self._inner, text=f"  {title}  ",
@@ -1111,7 +1163,7 @@ class AIApp:
 
             while self._vc_running:
                 try:
-                    with sr.Microphone(device_index=mic_idx, sample_rate=16000) as source:
+                    with self._open_mic(mic_idx) as source:
                         self.recognizer.adjust_for_ambient_noise(source, duration=0.3)
                         self.root.after(0, lambda: self._vc_status.config(
                             text="Listening...", fg=GREEN))
@@ -1361,25 +1413,31 @@ class AIApp:
             self.root.after(0, lambda: self._set_stt_status("Loading Whisper model...", YELLOW))
             model = get_whisper_model()
             wlang = LANG_WHISPER[lang_disp]
-            with sr.Microphone(device_index=mic_index if mic_index is not None else None, sample_rate=16000) as source:
-                self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
-                while self.is_listening:
-                    try:
-                        self.root.after(0, lambda: self._set_stt_status("Listening...", GREEN))
-                        self.root.after(0, lambda: self.live_word_var.set(""))
-                        audio = self.recognizer.listen(source, phrase_time_limit=7)
-                        self.root.after(0, lambda: self._set_stt_status("Processing...", YELLOW))
-                        raw = np.frombuffer(
-                            audio.get_raw_data(convert_rate=16000, convert_width=2),
-                            dtype=np.int16).astype(np.float32)/32768.0
-                        result = model.transcribe(raw, language=wlang, fp16=False)
-                        text = result["text"].strip()
-                        if text:
-                            self._push_words(text)
+            try:
+                with self._open_mic(mic_index) as source:
+                    self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                    while self.is_listening:
+                        try:
                             self.root.after(0, lambda: self._set_stt_status("Listening...", GREEN))
-                    except Exception:
-                        self.root.after(0, lambda: self.live_word_var.set(""))
-                        self.root.after(0, lambda: self._set_stt_status("Listening...", GREEN))
+                            self.root.after(0, lambda: self.live_word_var.set(""))
+                            audio = self.recognizer.listen(source, phrase_time_limit=7)
+                            self.root.after(0, lambda: self._set_stt_status("Processing...", YELLOW))
+                            raw = np.frombuffer(
+                                audio.get_raw_data(convert_rate=16000, convert_width=2),
+                                dtype=np.int16).astype(np.float32)/32768.0
+                            result = model.transcribe(raw, language=wlang, fp16=False)
+                            text = result["text"].strip()
+                            if text:
+                                self._push_words(text)
+                                self.root.after(0, lambda: self._set_stt_status("Listening...", GREEN))
+                        except Exception:
+                            self.root.after(0, lambda: self.live_word_var.set(""))
+                            self.root.after(0, lambda: self._set_stt_status("Listening...", GREEN))
+            except RuntimeError as e:
+                self.root.after(0, lambda err=str(e): messagebox.showerror("Microphone Error", err))
+                self.root.after(0, lambda: self._set_stt_status("Mic error", RED))
+                self.root.after(0, lambda: self._stt_set_state("idle"))
+                self.is_listening = False
 
         elif engine.startswith("Vosk"):
             from vosk import KaldiRecognizer
@@ -1394,26 +1452,32 @@ class AIApp:
                 self.is_listening = False; return
 
             rec = KaldiRecognizer(vosk_model, 16000); rec.SetWords(True)
-            with sr.Microphone(device_index=mic_index if mic_index is not None else None, sample_rate=16000) as source:
-                self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
-                while self.is_listening:
-                    try:
-                        self.root.after(0, lambda: self._set_stt_status("Listening...", GREEN))
-                        self.root.after(0, lambda: self.live_word_var.set(""))
-                        audio = self.recognizer.listen(source, phrase_time_limit=7)
-                        raw = audio.get_raw_data(convert_rate=16000, convert_width=2)
-                        if rec.AcceptWaveform(raw):
-                            result = json.loads(rec.Result())
-                            text = result.get("text","").strip()
-                        else:
-                            partial = json.loads(rec.PartialResult())
-                            text = partial.get("partial","").strip()
-                        if text:
-                            self._push_words(text)
+            try:
+                with self._open_mic(mic_index) as source:
+                    self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                    while self.is_listening:
+                        try:
                             self.root.after(0, lambda: self._set_stt_status("Listening...", GREEN))
-                    except Exception:
-                        self.root.after(0, lambda: self.live_word_var.set(""))
-                        self.root.after(0, lambda: self._set_stt_status("Listening...", GREEN))
+                            self.root.after(0, lambda: self.live_word_var.set(""))
+                            audio = self.recognizer.listen(source, phrase_time_limit=7)
+                            raw = audio.get_raw_data(convert_rate=16000, convert_width=2)
+                            if rec.AcceptWaveform(raw):
+                                result = json.loads(rec.Result())
+                                text = result.get("text","").strip()
+                            else:
+                                partial = json.loads(rec.PartialResult())
+                                text = partial.get("partial","").strip()
+                            if text:
+                                self._push_words(text)
+                                self.root.after(0, lambda: self._set_stt_status("Listening...", GREEN))
+                        except Exception:
+                            self.root.after(0, lambda: self.live_word_var.set(""))
+                            self.root.after(0, lambda: self._set_stt_status("Listening...", GREEN))
+            except RuntimeError as e:
+                self.root.after(0, lambda err=str(e): messagebox.showerror("Microphone Error", err))
+                self.root.after(0, lambda: self._set_stt_status("Mic error", RED))
+                self.root.after(0, lambda: self._stt_set_state("idle"))
+                self.is_listening = False
 
         self.root.after(0, lambda: self._set_stt_status("Idle", FG_DIM))
         self.root.after(0, lambda: self.live_word_var.set(""))
