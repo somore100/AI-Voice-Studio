@@ -117,6 +117,7 @@ VOSK_MODEL_DIR    = os.path.join(_MODELS_BASE, "vosk")
 # dict instead of hardcoding engine names/paths - see engines/registry.py
 # for how to add a new engine.
 from engines.registry import get_tts_engines
+from engines.coqui_xtts import CLONE_PREFIX
 TTS_ENGINES = get_tts_engines(_MODELS_BASE)
 
 # Captions/subtitles generation (ffmpeg extraction + Whisper word-level
@@ -540,6 +541,49 @@ class AIApp:
             return self._ensure_mic_access()   # user clicked Retry
         return False
 
+    def _refresh_mic_list(self, initial=False):
+        """(Re)populate self.mics / mics_display / mics_real from the
+        system's current microphone list, and pick the best-guess
+        device via auto_detect_mic(). mics_real maps a mics_display
+        index to the real device_index to pass to sr.Microphone() -
+        None for "System Default", an int for every other entry.
+
+        (mics_real used to be built as `[None] + self.mics`, which put
+        device *names* where device *indices* belonged and was never
+        actually read anywhere - the real lookup went through
+        `self.mics.index(self.selected_mic.get())` instead, which
+        raised a ValueError whenever "System Default" was selected,
+        silently killing the STT thread mid-listen with the UI still
+        showing "Listening..." - indistinguishable from a freeze.)
+        """
+        self.mics = sr.Microphone.list_microphone_names()
+        best_idx = auto_detect_mic(self.mics)
+        self.mics_display = ["System Default"] + self.mics if self.mics else ["No microphone found"]
+        self.mics_real = [None] + list(range(len(self.mics)))
+        default_display = self.mics_display[best_idx + 1] if self.mics else self.mics_display[0]
+        if initial:
+            self.selected_mic = tk.StringVar(value=default_display)
+        else:
+            self.selected_mic.set(default_display)
+            if hasattr(self, "mic_combo"):
+                self.mic_combo["values"] = self.mics_display
+
+    def _autodetect_mic(self):
+        self._refresh_mic_list()
+        self._set_stt_status(f"Autodetected: {self.selected_mic.get()}", CYAN)
+        self.root.after(2200, lambda: self._set_stt_status(
+            "Listening..." if getattr(self, "is_listening", False) else "Press Start to begin", FG_DIM))
+
+    def _resolve_mic_index(self):
+        """Map the selected dropdown entry to the device_index
+        sr.Microphone expects: None for "System Default", an int for a
+        named device."""
+        try:
+            disp_idx = self.mics_display.index(self.selected_mic.get())
+        except ValueError:
+            disp_idx = 0
+        return self.mics_real[disp_idx] if disp_idx < len(self.mics_real) else None
+
     @contextmanager
     def _open_mic(self, mic_index):
         """Open a Microphone as a context manager, guarding against two
@@ -699,11 +743,23 @@ class AIApp:
         xtts_voices = TTS_ENGINES["xtts"].list_voices()
         self.xtts_speaker_var = tk.StringVar(
             value=xtts_voices[0] if xtts_voices else "")
-        ttk.Combobox(xvrow, textvariable=self.xtts_speaker_var,
-                     values=xtts_voices, state="readonly",
-                     width=22, font=("Segoe UI",9)).pack(side="left", padx=(4,10))
-        self._label(xvrow, "(built-in preset voice - not cloned from audio)",
-                    fg=FG_DIM, font=("Segoe UI",8)).pack(side="left")
+        self._xtts_preset_dropdown = ttk.Combobox(
+            xvrow, textvariable=self.xtts_speaker_var,
+            values=xtts_voices, state="readonly",
+            width=22, font=("Segoe UI",9))
+        self._xtts_preset_dropdown.pack(side="left", padx=(4,10))
+
+        self.xtts_clone_path = None
+        xcrow = tk.Frame(self._xtts_panel, bg=CARD); xcrow.pack(fill="x", padx=4, pady=(0,4))
+        self._btn(xcrow, "Clone Voice from File...", self._pick_xtts_clone,
+                  color=SURFACE).pack(side="left")
+        self._xtts_clone_label = self._label(
+            xcrow, "  Using built-in preset voice above", fg=FG_DIM, font=("Segoe UI",8))
+        self._xtts_clone_label.pack(side="left", padx=4)
+        self._xtts_clone_clear = self._btn(
+            xcrow, "Clear", self._clear_xtts_clone, color=SURFACE, fg=RED)
+        self._xtts_clone_clear.pack(side="left", padx=4)
+        self._xtts_clone_clear.pack_forget()  # only shown once a clone file is set
 
         # Speed slider
         spd = tk.Frame(f, bg=CARD); spd.pack(fill="x", padx=2, pady=4)
@@ -737,6 +793,36 @@ class AIApp:
         self._prog_label, self._progressbar_w = self._prog_widgets(f, "Loading")
         self.tts_status = self._label(f, "Ready", fg=FG_DIM)
         self.tts_status.pack(pady=(2,6))
+
+    def _pick_xtts_clone(self):
+        path = filedialog.askopenfilename(
+            title="Choose a reference voice clip to clone",
+            filetypes=[("Audio files", "*.wav *.mp3 *.flac *.m4a *.ogg"),
+                       ("All files", "*.*")])
+        if not path:
+            return
+        self.xtts_clone_path = path
+        fname = os.path.basename(path)
+        self._xtts_clone_label.config(
+            text=f"  Cloning from: {fname}", fg=GREEN)
+        self._xtts_clone_clear.pack(side="left", padx=4)
+        self._xtts_preset_dropdown.config(state="disabled")
+
+    def _clear_xtts_clone(self):
+        self.xtts_clone_path = None
+        self._xtts_clone_label.config(
+            text="  Using built-in preset voice above", fg=FG_DIM)
+        self._xtts_clone_clear.pack_forget()
+        self._xtts_preset_dropdown.config(state="readonly")
+
+    def _xtts_voice_arg(self):
+        """The `voice` string to hand XTTS's synthesize(): a cloned
+        reference clip if one was picked, otherwise the selected preset
+        name. See engines/coqui_xtts.py's CLONE_PREFIX for how this
+        gets interpreted on the other end."""
+        if getattr(self, "xtts_clone_path", None):
+            return CLONE_PREFIX + self.xtts_clone_path
+        return self.xtts_speaker_var.get()
 
     def _on_engine_change(self):
         if self.tts_engine.get().startswith("XTTS"):
@@ -779,15 +865,13 @@ class AIApp:
         mic_row = tk.Frame(f, bg=CARD); mic_row.pack(fill="x", padx=2, pady=(2,0))
         self._label(mic_row, "Mic:").pack(side="left")
         self.recognizer   = sr.Recognizer()
-        self.mics         = sr.Microphone.list_microphone_names()
-        best_idx          = auto_detect_mic(self.mics)
-        self.mics_display = ["System Default"] + self.mics if self.mics else ["No microphone found"]
-        self.mics_real = [None] + self.mics
-        default_display   = self.mics_display[best_idx + 1] if self.mics else self.mics_display[0]
-        self.selected_mic = tk.StringVar(value=default_display)
-        ttk.Combobox(mic_row, textvariable=self.selected_mic,
+        self._refresh_mic_list(initial=True)
+        self.mic_combo = ttk.Combobox(mic_row, textvariable=self.selected_mic,
                      values=self.mics_display, state="readonly",
-                     width=40, font=("Segoe UI",9)).pack(side="left", padx=6)
+                     width=36, font=("Segoe UI",9))
+        self.mic_combo.pack(side="left", padx=6)
+        self._btn(mic_row, "Autodetect", self._autodetect_mic,
+                  color=SURFACE, padx=8).pack(side="left")
         self.always_on_top = tk.BooleanVar(value=False)
         ttk.Checkbutton(mic_row, text="On Top", variable=self.always_on_top,
                         command=self.toggle_top).pack(side="right", padx=4)
@@ -1053,11 +1137,38 @@ class AIApp:
         threading.Thread(target=self._translate_thread, args=(text,src,tgt), daemon=True).start()
 
     def _translate_thread(self, text, src, tgt):
-        try:
-            r = google_translate(text, src, tgt)
-            self.root.after(0, lambda: self._show_translation(r))
-        except Exception as e:
-            self.root.after(0, lambda: self._tr_error(str(e)))
+        # google_translate()'s urlopen(timeout=8) only bounds the socket
+        # connect/read phase - hostname resolution (getaddrinfo) happens
+        # first and isn't covered by that timeout at all. On a network
+        # that silently drops (rather than rejects) traffic to
+        # translate.googleapis.com - a firewall/DNS filter, some VPNs -
+        # that lookup can hang indefinitely and the "Translating..."
+        # spinner never resolves either way. Run the real call on its
+        # own daemon thread and enforce our own hard timeout here so the
+        # UI always gets an answer.
+        result = {}
+        done = threading.Event()
+
+        def worker():
+            try:
+                result["value"] = google_translate(text, src, tgt)
+            except Exception as e:
+                result["error"] = str(e)
+            finally:
+                done.set()
+
+        threading.Thread(target=worker, daemon=True).start()
+        if not done.wait(timeout=12):
+            self.root.after(0, lambda: self._tr_error(
+                "Timed out after 12s reaching Google Translate - check your "
+                "internet connection, or whether translate.googleapis.com "
+                "is reachable from this network (some firewalls/VPNs block "
+                "it silently)."))
+            return
+        if "error" in result:
+            self.root.after(0, lambda: self._tr_error(result["error"]))
+        else:
+            self.root.after(0, lambda: self._show_translation(result["value"]))
 
     def _show_translation(self, r):
         self._tr_progressbar_w.stop(); self._tr_progressbar_w["value"] = 0
@@ -1156,10 +1267,7 @@ class AIApp:
             # STT -> TTS pipeline
             engine = self.stt_engine.get() if hasattr(self, 'stt_engine') else "Whisper (recommended)"
             lang_disp = self.stt_lang_var.get() if hasattr(self, 'stt_lang_var') else "English"
-            try:
-                mic_idx = self.mics.index(self.selected_mic.get()) if self.mics else 0
-            except Exception:
-                mic_idx = 0
+            mic_idx = self._resolve_mic_index()
 
             while self._vc_running:
                 try:
@@ -1193,7 +1301,7 @@ class AIApp:
                         else:
                             lang = LANG_XTTS.get(self.xtts_lang_var.get(), "en")
                             TTS_ENGINES["xtts"].synthesize(
-                                text, self.xtts_speaker_var.get(), tmp.name, lang)
+                                text, self._xtts_voice_arg(), tmp.name, lang)
                         pygame.mixer.music.load(tmp.name)
                         pygame.mixer.music.play()
                         while pygame.mixer.music.get_busy() and self._vc_running:
@@ -1322,7 +1430,7 @@ class AIApp:
             if self._is_xtts():
                 lang = LANG_XTTS[self.xtts_lang_var.get()]
                 if lang not in XTTS_SUPPORTED: lang = "en"
-                TTS_ENGINES["xtts"].synthesize(text, self.xtts_speaker_var.get(), tmp.name, lang)
+                TTS_ENGINES["xtts"].synthesize(text, self._xtts_voice_arg(), tmp.name, lang)
             else:
                 TTS_ENGINES["vctk"].synthesize(text, sid, tmp.name)
             pygame.mixer.music.load(tmp.name); pygame.mixer.music.play()
@@ -1363,7 +1471,7 @@ class AIApp:
             if self._is_xtts():
                 lang = LANG_XTTS[self.xtts_lang_var.get()]
                 if lang not in XTTS_SUPPORTED: lang = "en"
-                TTS_ENGINES["xtts"].synthesize(text, self.xtts_speaker_var.get(), out, lang)
+                TTS_ENGINES["xtts"].synthesize(text, self._xtts_voice_arg(), out, lang)
             else:
                 TTS_ENGINES["vctk"].synthesize(text, sid, out)
             self.root.after(0, self._stop_loading)
@@ -1406,7 +1514,7 @@ class AIApp:
     def _listen_loop(self):
         engine    = self.stt_engine.get()
         lang_disp = self.stt_lang_var.get()
-        mic_index = self.mics.index(self.selected_mic.get())
+        mic_index = self._resolve_mic_index()
 
         if engine.startswith("Whisper"):
             import numpy as np
@@ -1688,6 +1796,50 @@ def _download_missing(self):
     threading.Thread(target=self._do_download_missing, daemon=True).start()
 
 
+PKG_MAP = {
+    "tts_pkg":     "TTS",
+    "whisper_pkg": "openai-whisper",
+    "vosk_pkg":    "vosk",
+}
+
+
+def _install_pip_package(self, key):
+    """pip-install the package behind a Downloads-panel package row
+    (tts_pkg / whisper_pkg / vosk_pkg) and update its status. Shared by
+    both "Download Missing" (bulk) and each row's own "Install" button
+    - _do_download_model() used to have no branch at all for these
+    three keys, so clicking "Install" on e.g. the Whisper package row
+    ran pip install for nothing, then still reported "Done!" and
+    re-checked the (unchanged, still-missing) import - "Done!" but
+    still "Missing" was the visible symptom.
+    """
+    pip_name = PKG_MAP[key]
+    self.root.after(0, lambda n=pip_name: self._dl_label.config(
+        text=f"Installing {n}...", fg=YELLOW))
+    import subprocess, sys
+    r = subprocess.run(
+        [sys.executable, "-m", "pip", "install", pip_name],
+        capture_output=True, text=True)
+    ok = r.returncode == 0
+    self.root.after(0, lambda k=key, o=ok: self._set_model_status(
+        k, o, "Installed" if o else "Failed"))
+    if not ok:
+        err = (r.stderr or r.stdout or "").strip().splitlines()[-1:] or ["pip install failed"]
+        self.root.after(0, lambda e=err[0]: self._dl_label.config(
+            text=f"Error installing {pip_name}: {e[:60]}", fg=RED))
+
+    # TTS needs torch, which isn't declared as its pip dependency here
+    # (deliberately - the CPU wheel comes from PyTorch's own index).
+    if key == "tts_pkg" and ok:
+        self.root.after(0, lambda: self._dl_label.config(
+            text="Installing PyTorch (large download)...", fg=YELLOW))
+        subprocess.run([sys.executable, "-m", "pip", "install",
+                        "torch", "torchaudio",
+                        "--index-url", "https://download.pytorch.org/whl/cpu"],
+                       capture_output=True)
+    return ok
+
+
 def _do_download_missing(self):
     self.root.after(0, lambda: self._dl_bar.start(12))
     self._download_in_progress = True
@@ -1714,32 +1866,8 @@ def _do_download_missing(self):
             "xtts", False, "License declined"))
 
     # Install packages
-    pkg_map = {
-        "tts_pkg":     "TTS",
-        "whisper_pkg": "openai-whisper",
-        "vosk_pkg":    "vosk",
-    }
     for key in missing_pkgs:
-        pip_name = pkg_map[key]
-        self.root.after(0, lambda n=pip_name: self._dl_label.config(
-            text=f"Installing {n}...", fg=YELLOW))
-        import subprocess, sys
-        r = subprocess.run(
-            [sys.executable, "-m", "pip", "install", pip_name],
-            capture_output=True, text=True)
-        ok = r.returncode == 0
-        self.root.after(0, lambda k=key, o=ok: self._set_model_status(
-            k, o, "Installed" if o else "Failed"))
-
-    # Also install torch if TTS was missing
-    if "tts_pkg" in missing_pkgs:
-        self.root.after(0, lambda: self._dl_label.config(
-            text="Installing PyTorch (large download)...", fg=YELLOW))
-        import subprocess, sys
-        subprocess.run([sys.executable, "-m", "pip", "install",
-                        "torch", "torchaudio",
-                        "--index-url", "https://download.pytorch.org/whl/cpu"],
-                       capture_output=True)
+        self._install_pip_package(key)
 
     # Download models
     for key in missing_models:
@@ -1780,7 +1908,9 @@ def _do_download_one(self, key):
 
 def _do_download_model(self, key):
     try:
-        if key == "whisper":
+        if key in PKG_MAP:
+            self._install_pip_package(key)
+        elif key == "whisper":
             import whisper
             whisper.load_model("small")
             self.root.after(0, lambda: self._set_model_status("whisper", True, "Ready"))
@@ -1837,6 +1967,7 @@ AIApp._build_models_frame    = _build_models_frame
 AIApp._set_model_status      = _set_model_status
 AIApp._check_models          = _check_models
 AIApp._do_check_models       = _do_check_models
+AIApp._install_pip_package   = _install_pip_package
 AIApp._download_missing      = _download_missing
 AIApp._do_download_missing   = _do_download_missing
 AIApp._download_one          = _download_one
