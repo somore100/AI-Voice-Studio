@@ -252,7 +252,45 @@ LANG_DISPLAY = [l[0] for l in LANGUAGES]
 LANG_WHISPER = {l[0]: l[1] for l in LANGUAGES}
 LANG_VOSK    = {l[0]: l[2] for l in LANGUAGES}
 LANG_XTTS    = {l[0]: l[3] for l in LANGUAGES}
-LANG_TR      = {l[0]: l[4] for l in LANGUAGES}
+
+# The Translator panel used to reuse LANGUAGES/LANG_TR above - the same
+# 17-language table built for Whisper/Vosk/XTTS's much smaller actual
+# supported-language sets. Google Translate's free endpoint supports
+# well over 100 languages, so capping the Translator's dropdowns at 17
+# threw away most of what it can actually do. This is a separate,
+# broader table just for the Translator panel.
+TR_LANGUAGES = [
+    ("Afrikaans","af"),("Albanian","sq"),("Amharic","am"),("Arabic","ar"),
+    ("Armenian","hy"),("Azerbaijani","az"),("Basque","eu"),("Belarusian","be"),
+    ("Bengali","bn"),("Bosnian","bs"),("Bulgarian","bg"),("Catalan","ca"),
+    ("Cebuano","ceb"),("Chinese (Simplified)","zh-CN"),("Chinese (Traditional)","zh-TW"),
+    ("Corsican","co"),("Croatian","hr"),("Czech","cs"),("Danish","da"),
+    ("Dutch","nl"),("English","en"),("Esperanto","eo"),("Estonian","et"),
+    ("Finnish","fi"),("French","fr"),("Frisian","fy"),("Galician","gl"),
+    ("Georgian","ka"),("German","de"),("Greek","el"),("Gujarati","gu"),
+    ("Haitian Creole","ht"),("Hausa","ha"),("Hawaiian","haw"),("Hebrew","he"),
+    ("Hindi","hi"),("Hmong","hmn"),("Hungarian","hu"),("Icelandic","is"),
+    ("Igbo","ig"),("Indonesian","id"),("Irish","ga"),("Italian","it"),
+    ("Japanese","ja"),("Javanese","jv"),("Kannada","kn"),("Kazakh","kk"),
+    ("Khmer","km"),("Korean","ko"),("Kurdish","ku"),("Kyrgyz","ky"),
+    ("Lao","lo"),("Latin","la"),("Latvian","lv"),("Lithuanian","lt"),
+    ("Luxembourgish","lb"),("Macedonian","mk"),("Malagasy","mg"),("Malay","ms"),
+    ("Malayalam","ml"),("Maltese","mt"),("Maori","mi"),("Marathi","mr"),
+    ("Mongolian","mn"),("Myanmar (Burmese)","my"),("Nepali","ne"),("Norwegian","no"),
+    ("Pashto","ps"),("Persian","fa"),("Polish","pl"),("Portuguese","pt"),
+    ("Punjabi","pa"),("Romanian","ro"),("Russian","ru"),("Samoan","sm"),
+    ("Scots Gaelic","gd"),("Serbian","sr"),("Sesotho","st"),("Shona","sn"),
+    ("Sindhi","sd"),("Sinhala","si"),("Slovak","sk"),("Slovenian","sl"),
+    ("Somali","so"),("Spanish","es"),("Sundanese","su"),("Swahili","sw"),
+    ("Swedish","sv"),("Tajik","tg"),("Tamil","ta"),("Telugu","te"),
+    ("Thai","th"),("Turkish","tr"),("Ukrainian","uk"),("Urdu","ur"),
+    ("Uzbek","uz"),("Vietnamese","vi"),("Welsh","cy"),("Xhosa","xh"),
+    ("Yiddish","yi"),("Yoruba","yo"),("Zulu","zu"),
+]
+LANG_TR_DISPLAY = [l[0] for l in TR_LANGUAGES]
+LANG_TR_FROM_DISPLAY = ["Auto-Detect"] + LANG_TR_DISPLAY
+LANG_TR = {l[0]: l[1] for l in TR_LANGUAGES}
+LANG_TR["Auto-Detect"] = "auto"
 
 # XTTS-v2 genuinely supports only these 17 languages (Coqui's own docs:
 # en, es, fr, de, it, pt, pl, tr, ru, nl, cs, ar, zh-cn, hu, ko, ja, hi).
@@ -1079,14 +1117,14 @@ class AIApp:
 
         lr = tk.Frame(f, bg=CARD); lr.pack(fill="x", padx=2, pady=(0,6))
         self._label(lr, "From:").pack(side="left")
-        self.tr_from_var = tk.StringVar(value=LANG_DISPLAY[0])
-        ttk.Combobox(lr, textvariable=self.tr_from_var, values=LANG_DISPLAY,
-                     state="readonly", width=16, font=("Segoe UI",9)).pack(side="left", padx=4)
+        self.tr_from_var = tk.StringVar(value="Auto-Detect")
+        ttk.Combobox(lr, textvariable=self.tr_from_var, values=LANG_TR_FROM_DISPLAY,
+                     state="readonly", width=18, font=("Segoe UI",9)).pack(side="left", padx=4)
         self._btn(lr, "Swap", self._tr_swap, color=SURFACE, padx=8).pack(side="left", padx=6)
         self._label(lr, "To:").pack(side="left")
-        self.tr_to_var = tk.StringVar(value=LANG_DISPLAY[1])
-        ttk.Combobox(lr, textvariable=self.tr_to_var, values=LANG_DISPLAY,
-                     state="readonly", width=16, font=("Segoe UI",9)).pack(side="left", padx=4)
+        self.tr_to_var = tk.StringVar(value="English")
+        ttk.Combobox(lr, textvariable=self.tr_to_var, values=LANG_TR_DISPLAY,
+                     state="readonly", width=18, font=("Segoe UI",9)).pack(side="left", padx=4)
 
         sh = tk.Frame(f, bg=CARD); sh.pack(fill="x", padx=2)
         self._label(sh, "Source text:").pack(side="left")
@@ -1109,6 +1147,11 @@ class AIApp:
 
     def _tr_swap(self):
         a, b = self.tr_from_var.get(), self.tr_to_var.get()
+        if a == "Auto-Detect":
+            # "To" isn't in LANG_TR_FROM_DISPLAY's extra "Auto-Detect"
+            # entry, and translating *to* an auto-detected language
+            # makes no sense anyway - just leave both as they are.
+            return
         self.tr_from_var.set(b); self.tr_to_var.set(a)
 
     def _tr_paste_stt(self):
