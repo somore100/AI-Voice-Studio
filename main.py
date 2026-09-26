@@ -936,9 +936,90 @@ class AIApp:
         util = tk.Frame(f, bg=CARD); util.pack(pady=(0,6))
         self._btn(util, "Copy",  self.copy_transcript,  color=BLUE,  fg=BG, bold=True).pack(side="left", padx=4)
         self._btn(util, "Clear", self.clear_transcript, color=SURFACE).pack(side="left", padx=4)
+        self._btn(util, "Transcribe File...", self._stt_transcribe_file,
+                  color=SURFACE).pack(side="left", padx=4)
         self.mini_btn = self._btn(util, "Mini",  self.minimized_mode,   color=SURFACE)
         self.mini_btn.pack(side="left", padx=4)
         self._stt_set_state("idle")
+
+    def _stt_transcribe_file(self):
+        """Transcribe an audio/video file straight to text in the
+        transcript box, using whichever STT engine/language is
+        currently selected above - same models as live mic STT, just
+        fed a file instead of the microphone. Reuses subtitles.py's
+        ffmpeg extraction (already proven via the Captions feature)
+        rather than duplicating it."""
+        if self.stt_engine.get() == "None installed":
+            messagebox.showerror("No STT Engine",
+                "No speech recognition engine installed.\n\npip install openai-whisper\npip install vosk")
+            return
+        if not subtitles.ffmpeg_path():
+            messagebox.showerror("ffmpeg Missing",
+                "Transcribing a file needs ffmpeg on your system PATH to "
+                "extract its audio - same requirement as Captions.")
+            return
+        path = filedialog.askopenfilename(
+            title="Choose an audio or video file to transcribe",
+            filetypes=[("Audio/Video", "*.mp4 *.mkv *.mov *.avi *.webm "
+                                        "*.wav *.mp3 *.m4a *.flac *.ogg"),
+                       ("All files", "*.*")])
+        if not path:
+            return
+        self._set_stt_status("Extracting audio...", YELLOW)
+        threading.Thread(target=self._do_transcribe_file, args=(path,), daemon=True).start()
+
+    def _do_transcribe_file(self, path):
+        tmp_wav = os.path.join(tempfile.gettempdir(), f"avs_filetx_{int(time.time())}.wav")
+        try:
+            subtitles.extract_audio(path, tmp_wav)
+            engine    = self.stt_engine.get()
+            lang_disp = self.stt_lang_var.get()
+            self.root.after(0, lambda: self._set_stt_status(
+                "Transcribing... this can take a while for longer files", YELLOW))
+            print(f"[AVS] File transcription: engine={engine} lang={lang_disp} file={os.path.basename(path)}")
+            t0 = time.time()
+
+            if engine.startswith("Whisper"):
+                model = get_whisper_model()
+                wlang = LANG_WHISPER[lang_disp]
+                result = model.transcribe(tmp_wav, language=wlang, fp16=False)
+                text = result["text"].strip()
+            else:
+                import wave
+                from vosk import KaldiRecognizer
+                vlang = LANG_VOSK[lang_disp]
+                vosk_model = get_vosk_model(vlang)
+                wf = wave.open(tmp_wav, "rb")
+                rec = KaldiRecognizer(vosk_model, wf.getframerate()); rec.SetWords(True)
+                pieces = []
+                while True:
+                    data = wf.readframes(4000)
+                    if not data:
+                        break
+                    if rec.AcceptWaveform(data):
+                        pieces.append(json.loads(rec.Result()).get("text", ""))
+                pieces.append(json.loads(rec.FinalResult()).get("text", ""))
+                wf.close()
+                text = " ".join(p for p in pieces if p).strip()
+
+            print(f"[AVS] File transcription done in {time.time()-t0:.1f}s, {len(text)} chars")
+            if text:
+                self.root.after(0, lambda: self.transcript.insert(tk.END, text + " "))
+                self.root.after(0, lambda: self.transcript.see(tk.END))
+                self.root.after(0, lambda: self._set_stt_status("Transcription added", GREEN))
+            else:
+                self.root.after(0, lambda: self._set_stt_status("No speech detected", YELLOW))
+        except Exception as e:
+            print(f"[AVS] File transcription failed: {e}")
+            traceback.print_exc()
+            self.root.after(0, lambda: messagebox.showerror("Transcription Error", str(e)))
+            self.root.after(0, lambda: self._set_stt_status("Error", RED))
+        finally:
+            try:
+                if os.path.isfile(tmp_wav):
+                    os.remove(tmp_wav)
+            except Exception:
+                pass
 
     def _stt_set_state(self, state):
         for w in self._stt_btn_frame.winfo_children(): w.destroy()
@@ -1585,7 +1666,30 @@ class AIApp:
         if engine.startswith("Whisper"):
             import numpy as np
             self.root.after(0, lambda: self._set_stt_status("Loading Whisper model...", YELLOW))
-            model = get_whisper_model()
+            try:
+                model = get_whisper_model()
+            except Exception as e:
+                msg = str(e)
+                if "CERTIFICATE_VERIFY_FAILED" in msg or "SSL" in msg.upper():
+                    msg = (
+                        "Couldn't download the Whisper model - SSL certificate "
+                        "verification failed (\"self-signed certificate in "
+                        "certificate chain\").\n\n"
+                        "This almost always means something between this "
+                        "machine and the internet is intercepting HTTPS "
+                        "traffic: a network/corporate firewall, a VPN, or "
+                        "antivirus software with HTTPS/SSL scanning enabled "
+                        "(Kaspersky, ESET and similar often do this by "
+                        "default). Check for that, or download small.pt "
+                        "yourself from https://github.com/openai/whisper "
+                        f"and place it in:\n{WHISPER_MODEL_DIR}")
+                else:
+                    msg = f"Couldn't load the Whisper model:\n{msg}"
+                self.root.after(0, lambda m=msg: messagebox.showerror("Whisper Model Error", m))
+                self.root.after(0, lambda: self._set_stt_status("Model error", RED))
+                self.root.after(0, lambda: self._stt_set_state("idle"))
+                self.is_listening = False
+                return
             wlang = LANG_WHISPER[lang_disp]
             try:
                 with self._open_mic(mic_index) as source:
