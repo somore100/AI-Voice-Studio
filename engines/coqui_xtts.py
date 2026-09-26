@@ -40,6 +40,14 @@ PRESET_SPEAKERS = [
     "Marcos Rudaski",
 ]
 
+# Voice-cloning marker: EngineSpec.synthesize()'s `voice` param is a
+# plain string shared across every engine (preset name, VCTK speaker
+# id, ...), so rather than widen that interface for every engine just
+# for XTTS's sake, a cloned voice is passed as this prefix + the
+# reference clip's path. Only this module ever needs to know about it -
+# main.py just builds the string via this same constant.
+CLONE_PREFIX = "__clone__:"
+
 CPML_TEXT = (
     "XTTS-v2 is distributed under Coqui's CPML license, not a fully "
     "open license.\n\n"
@@ -107,9 +115,16 @@ def build(models_base):
         # so it always needs either a speaker_wav (clone from audio) or a
         # speaker name (one of the built-in presets above). Without one
         # of those, Coqui's own code raises "Neither speaker_wav nor
-        # speaker_id was specified" - so if we weren't given a valid
-        # preset name, fall back to the first preset rather than ever
-        # calling tts_to_file() with neither.
+        # speaker_id was specified".
+        if voice and voice.startswith(CLONE_PREFIX):
+            speaker_wav = voice[len(CLONE_PREFIX):]
+            _get_instance().tts_to_file(
+                text=text, language=language or "en", speaker_wav=speaker_wav,
+                file_path=out_path)
+            return
+        # Not a clone reference - fall back to the first preset rather
+        # than ever calling tts_to_file() with neither speaker_wav nor
+        # speaker if we weren't given a valid preset name.
         speaker = voice if voice in PRESET_SPEAKERS else PRESET_SPEAKERS[0]
         _get_instance().tts_to_file(
             text=text, language=language or "en", speaker=speaker,
