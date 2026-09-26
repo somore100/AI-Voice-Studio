@@ -1332,6 +1332,7 @@ class AIApp:
                     text = result["text"].strip()
 
                     if text and self._vc_running:
+                        print(f"[AVS] VC heard: \"{text}\"")
                         self.root.after(0, lambda t=text: self._vc_status.config(
                             text=f"Speaking: {t[:40]}", fg=CYAN))
                         # TTS output
@@ -1339,12 +1340,14 @@ class AIApp:
                         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
                         tmp.close()
                         sid = self.get_selected_speaker_id() if not self._is_xtts() else None
+                        t0 = self._log_tts_job(text, sid, "VC speak")
                         if sid:
                             TTS_ENGINES["vctk"].synthesize(text, sid, tmp.name)
                         else:
                             lang = LANG_XTTS.get(self.xtts_lang_var.get(), "en")
                             TTS_ENGINES["xtts"].synthesize(
                                 text, self._xtts_voice_arg(), tmp.name, lang)
+                        print(f"[AVS] VC speak ready in {time.time()-t0:.1f}s")
                         pygame.mixer.music.load(tmp.name)
                         pygame.mixer.music.play()
                         while pygame.mixer.music.get_busy() and self._vc_running:
@@ -1466,7 +1469,24 @@ class AIApp:
         self._set_tts_status("Generating preview...", YELLOW)
         threading.Thread(target=self._do_preview, args=(text,sid), daemon=True).start()
 
+    def _log_tts_job(self, text, sid, label):
+        """Print what's actually happening to the terminal - engine,
+        voice, language, text length - and return a start time so the
+        caller can log how long synthesis actually took. Console was
+        otherwise silent about this (only exceptions got logged),
+        which made it look like nothing was happening during the
+        several-seconds-to-minutes a CPU synth can take."""
+        if self._is_xtts():
+            clone = getattr(self, "xtts_clone_path", None)
+            voice = f"cloned from {os.path.basename(clone)}" if clone else self.xtts_speaker_var.get()
+            print(f"[AVS] {label}: engine=XTTS-v2 voice={voice} "
+                  f"lang={self.xtts_lang_var.get()} chars={len(text)}")
+        else:
+            print(f"[AVS] {label}: engine=VCTK voice={sid} chars={len(text)}")
+        return time.time()
+
     def _do_preview(self, text, sid):
+        t0 = self._log_tts_job(text, sid, "Preview")
         try:
             tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False); tmp.close()
             self.preview_temp = tmp.name
@@ -1476,6 +1496,7 @@ class AIApp:
                 TTS_ENGINES["xtts"].synthesize(text, self._xtts_voice_arg(), tmp.name, lang)
             else:
                 TTS_ENGINES["vctk"].synthesize(text, sid, tmp.name)
+            print(f"[AVS] Preview ready in {time.time()-t0:.1f}s -> {tmp.name}")
             pygame.mixer.music.load(tmp.name); pygame.mixer.music.play()
             self.root.after(0, self._stop_loading)
             self.root.after(0, lambda: self._set_tts_status("Playing preview...", GREEN))
@@ -1510,6 +1531,7 @@ class AIApp:
         threading.Thread(target=self._do_save, args=(text,sid,out), daemon=True).start()
 
     def _do_save(self, text, sid, out):
+        t0 = self._log_tts_job(text, sid, "Save")
         try:
             if self._is_xtts():
                 lang = LANG_XTTS[self.xtts_lang_var.get()]
@@ -1517,6 +1539,7 @@ class AIApp:
                 TTS_ENGINES["xtts"].synthesize(text, self._xtts_voice_arg(), out, lang)
             else:
                 TTS_ENGINES["vctk"].synthesize(text, sid, out)
+            print(f"[AVS] Saved in {time.time()-t0:.1f}s -> {out}")
             self.root.after(0, self._stop_loading)
             self.root.after(0, lambda: messagebox.showinfo("Saved!", f"Audio saved to:\n{out}"))
             self.root.after(0, lambda: self._set_tts_status("Saved!", GREEN))
