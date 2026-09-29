@@ -63,7 +63,7 @@ Before redistributing a build of AI-Voice-Studio, make sure you comply with the 
 
 ## 📄 License
 
-AI-Voice-Studio is licensed under the **Apache License 2.0**.
+AI-Voice-Studio is licensed under the **Source-Available License v1.0**.
 
 This means you are free to:
 
