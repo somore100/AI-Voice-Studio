@@ -16,11 +16,17 @@ Instead of having to interact with models and command-line tools individually, A
 * 🧩 Designed to work with different voice-generation backends
 * 🚀 Built to make experimenting with AI voice technology easier
 
-## 🎯 Why?
+​##🎯 Why AI-Voice-Studio?##
+​AI voice tools can be powerful, but getting everything working together often means wrestling with models, dependencies, command-line tools, complex configuration, and fragmented interfaces.
+​AI-Voice-Studio solves this differently—not by trying to outperform every specialized voice generator, but by combining multiple voice generation technologies and models into one unified interface.
+​What makes it stand out:
+   ​🔗 Multi-backend support: Integrate
+   various AI voice models and APIs (with     more coming) without switching between     different tools
+   ​🎨 Quality-of-life features: Built-in      audio generation, playback, model          management, and simple configuration—.     all in one place
+  ​🔐 Open and extensible: Add your own       models, backends, and plugins to tailor    the tool to your workflow(soon)
 
-AI voice tools can be powerful, but getting everything working together can sometimes mean dealing with models, dependencies, command-line tools, configuration, and different interfaces.
-
-AI-Voice-Studio aims to make that process simpler by putting the experience behind one interface.
+​A note on development:
+​Building AI-Voice-Studio means ~45-60 minutes per test cycle due to compilation requirements with frozen builds. So development is desently slowed
 
 ## 🛠️ Development
 
