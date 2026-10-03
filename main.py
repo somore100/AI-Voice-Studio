@@ -1,5 +1,30 @@
 import os
 import sys
+
+# ──────────────────────────────────────────────────────────────
+#  SSL CA-BUNDLE FIX (source runs fine, packaged builds don't)
+# ──────────────────────────────────────────────────────────────
+# Confirmed by testing: running from source, Python's ssl module finds
+# a valid CA bundle on its own (via the OS store) and every HTTPS call
+# - Whisper model download, Google Translate, Vosk/XTTS model fetches -
+# works. Once frozen by PyInstaller, that automatic lookup can come up
+# empty (the frozen interpreter has no meaningful path to search), so
+# every one of those same calls fails with CERTIFICATE_VERIFY_FAILED
+# even though nothing is wrong with the network. Explicitly pointing
+# SSL_CERT_FILE at certifi's bundled cacert.pem fixes this - PyInstaller
+# already bundles certifi's data via its own built-in hook (certifi is
+# a transitive dependency of requests/huggingface_hub either way), so
+# this is just telling Python's ssl module where to look for it. Setting
+# it this early, before urllib/requests/ssl ever open a connection, and
+# via setdefault() so it never overrides a cert file the user already
+# configured, makes this a no-op when running from source too.
+try:
+    import certifi
+    os.environ.setdefault("SSL_CERT_FILE", certifi.where())
+    os.environ.setdefault("REQUESTS_CA_BUNDLE", certifi.where())
+except Exception as _e:
+    print(f"[AVS] Warning: could not set up certifi CA bundle: {_e}")
+
 import tkinter as tk
 from tkinter import messagebox, ttk, filedialog
 import threading
@@ -417,6 +442,90 @@ class ScrollableFrame(tk.Frame):
 # ──────────────────────────────────────────────────────────────
 #  MIC PERMISSION CHECK (real OS-level test, not a fake dialog)
 # ──────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────
+#  SAFE INPUT DEVICES (skip PortAudio's JACK host API)
+#  PortAudio's JACK backend overruns a 2048-byte ring-buffer copy in
+#  the pipewire-jack callback thread (confirmed under valgrind), which
+#  corrupts the heap and later aborts in an unrelated malloc().
+# ──────────────────────────────────────────────────────────────
+def _pa_is_jack(pa, dev):
+    try:
+        return "jack" in pa.get_host_api_info_by_index(dev["hostApi"])["name"].lower()
+    except Exception:
+        return False
+
+def safe_input_devices():
+    """[(portaudio_index, name), ...] for input devices, JACK excluded."""
+    import pyaudio
+    pa = pyaudio.PyAudio()
+    try:
+        out = []
+        for i in range(pa.get_device_count()):
+            d = pa.get_device_info_by_index(i)
+            if d.get("maxInputChannels", 0) > 0 and not _pa_is_jack(pa, d):
+                out.append((i, d["name"]))
+        return out
+    finally:
+        pa.terminate()
+
+def safe_default_input_index(pa):
+    """Default input index, or a non-JACK fallback if the default is JACK."""
+    try:
+        d = pa.get_default_input_device_info()
+        if not _pa_is_jack(pa, d):
+            return d["index"]
+    except Exception:
+        pass
+    cands = []
+    for i in range(pa.get_device_count()):
+        d = pa.get_device_info_by_index(i)
+        if d.get("maxInputChannels", 0) > 0 and not _pa_is_jack(pa, d):
+            cands.append((i, d["name"].lower()))
+    for key in ("pipewire", "pulse", "default"):
+        for i, n in cands:
+            if key in n:
+                return i
+    if cands:
+        return cands[0][0]
+    raise OSError("No non-JACK input device found")
+
+def resolve_input_index(pa, mic):
+    """Resolve a mic selection to a CURRENT non-JACK PortAudio index.
+
+    `mic` is None (system default), a (pa_index, name) tuple as stored in
+    mics_real, a bare int, or a bare name. The stored index is only trusted
+    if the device at that index still has the same name; otherwise we look
+    the name up again (PortAudio indices shift between enumerations).
+    Returns (index, name). Raises RuntimeError if the device is gone.
+    """
+    def _ok(i):
+        d = pa.get_device_info_by_index(i)
+        return d.get("maxInputChannels", 0) > 0 and not _pa_is_jack(pa, d)
+
+    if mic is None:
+        i = safe_default_input_index(pa)
+        return i, pa.get_device_info_by_index(i)["name"]
+
+    if isinstance(mic, tuple):
+        idx, name = mic
+    elif isinstance(mic, int):
+        idx, name = mic, None
+    else:
+        idx, name = None, str(mic)
+
+    n = pa.get_device_count()
+    if idx is not None and 0 <= idx < n and _ok(idx):
+        d = pa.get_device_info_by_index(idx)
+        if name is None or d["name"] == name:
+            return idx, d["name"]
+    if name is not None:
+        for i in range(n):
+            if _ok(i) and pa.get_device_info_by_index(i)["name"] == name:
+                return i, name
+    raise RuntimeError(
+        f"The selected microphone ({name or idx}) is no longer available. "
+        "Pick a microphone from the dropdown again (or use System Default).")
+
 def check_mic_access():
     """Actually try to open the default input device.
     Returns (ok: bool, message: str)."""
@@ -424,7 +533,7 @@ def check_mic_access():
         import pyaudio
         pa = pyaudio.PyAudio()
         try:
-            info = pa.get_default_input_device_info()
+            info = pa.get_device_info_by_index(safe_default_input_index(pa))
         except Exception:
             pa.terminate()
             return False, "No microphone detected on this system."
@@ -594,10 +703,12 @@ class AIApp:
         silently killing the STT thread mid-listen with the UI still
         showing "Listening..." - indistinguishable from a freeze.)
         """
-        self.mics = sr.Microphone.list_microphone_names()
+        _pairs = safe_input_devices()
+        self.mics = [n for _, n in _pairs]
+        self._mic_pa_indices = [i for i, _ in _pairs]
         best_idx = auto_detect_mic(self.mics)
         self.mics_display = ["System Default"] + self.mics if self.mics else ["No microphone found"]
-        self.mics_real = [None] + list(range(len(self.mics)))
+        self.mics_real = [None] + list(_pairs)   # (pa_index, name) tuples
         default_display = self.mics_display[best_idx + 1] if self.mics else self.mics_display[0]
         if initial:
             self.selected_mic = tk.StringVar(value=default_display)
@@ -649,19 +760,41 @@ class AIApp:
            state ourselves right after __enter__() and turn it into one
            clear, catchable RuntimeError instead of that double crash.
         """
-        source = sr.Microphone(device_index=mic_index)
+        import pyaudio as _pyaudio
+        _p = _pyaudio.PyAudio()
+        try:
+            try:
+                mic_index, _nm = resolve_input_index(_p, mic_index)
+            except RuntimeError:
+                raise
+            except Exception as e:
+                raise RuntimeError(f"Could not find a usable input device: {e}") from e
+            _d = _p.get_device_info_by_index(mic_index)
+            _h = _p.get_host_api_info_by_index(_d["hostApi"])["name"]
+            print(f"[AVS] mic open: idx={mic_index} name={_nm!r} host={_h} "
+                  f"rate={_d.get('defaultSampleRate')}", flush=True)
+        finally:
+            _p.terminate()
+        try:
+            source = sr.Microphone(device_index=mic_index)
+        except Exception as e:
+            raise RuntimeError(f"Could not open microphone: {e}") from e
         source.__enter__()
         try:
             if source.stream is None:
                 raise RuntimeError(
                     "Could not open this microphone - it may be busy, "
                     "disconnected, or rejected by the audio driver. Try "
-                    "picking a different microphone from the dropdown."
+                    "picking a different microphone from the dropdown. "
+                    "(PortAudio details are printed in the terminal.)"
                 )
             yield source
         finally:
             if source.stream is not None:
-                source.__exit__(None, None, None)
+                try:
+                    source.__exit__(None, None, None)
+                except Exception as e:
+                    print(f"[AVS] mic close error (ignored): {e}", flush=True)
             else:
                 try:
                     source.audio.terminate()
@@ -719,6 +852,60 @@ class AIApp:
                                mode="indeterminate", length=400)
         bar.pack(fill="x", pady=(2,0))
         return lbl, bar
+
+    def _searchable_combo(self, parent, var, full_values, width, **pack_kw):
+        # A plain ttk.Combobox with state="readonly" only lets you jump
+        # to an entry by typing its first letter, one keypress at a time
+        # - unusable for a ~95-entry list like the Translator's languages.
+        # This makes it editable and filters the dropdown to substring
+        # matches as you type, while still only ever committing one of
+        # the real values to `var` (never arbitrary typed text), so
+        # every caller that does e.g. LANG_TR[var.get()] stays safe.
+        cb = ttk.Combobox(parent, textvariable=var, values=full_values,
+                           width=width, font=("Segoe UI", 9))
+        state = {"last_valid": var.get()}
+
+        def _post_dropdown():
+            try:
+                cb.tk.call("ttk::combobox::Post", cb)
+                cb.focus_set()
+                cb.icursor("end")
+            except tk.TclError:
+                pass
+
+        def _on_key(event):
+            if event.keysym in ("Up", "Down", "Return", "Escape", "Tab"):
+                return
+            typed = var.get().strip().lower()
+            matches = full_values if not typed else \
+                [v for v in full_values if typed in v.lower()]
+            cb["values"] = matches
+            if matches:
+                _post_dropdown()
+
+        def _commit(event=None):
+            current = var.get().strip()
+            lower_map = {v.lower(): v for v in full_values}
+            if current in full_values:
+                state["last_valid"] = current
+            elif current.lower() in lower_map:
+                var.set(lower_map[current.lower()])
+                state["last_valid"] = lower_map[current.lower()]
+            else:
+                # No exact/case-insensitive match - fall back to the
+                # first filtered result if there is one, else revert.
+                filtered = list(cb["values"])
+                var.set(filtered[0] if filtered else state["last_valid"])
+                state["last_valid"] = var.get()
+            cb["values"] = full_values
+
+        cb.bind("<KeyRelease>", _on_key)
+        cb.bind("<<ComboboxSelected>>", _commit)
+        cb.bind("<FocusOut>", _commit)
+        cb.bind("<Return>", lambda e: (_commit(), cb.selection_range(0, "end")))
+        if pack_kw:
+            cb.pack(**pack_kw)
+        return cb
 
     def _build_tts_frame(self):
         f = self._lf("Text-to-Speech")
@@ -1199,13 +1386,13 @@ class AIApp:
         lr = tk.Frame(f, bg=CARD); lr.pack(fill="x", padx=2, pady=(0,6))
         self._label(lr, "From:").pack(side="left")
         self.tr_from_var = tk.StringVar(value="Auto-Detect")
-        ttk.Combobox(lr, textvariable=self.tr_from_var, values=LANG_TR_FROM_DISPLAY,
-                     state="readonly", width=18, font=("Segoe UI",9)).pack(side="left", padx=4)
+        self._searchable_combo(lr, self.tr_from_var, LANG_TR_FROM_DISPLAY, width=18,
+                                side="left", padx=4)
         self._btn(lr, "Swap", self._tr_swap, color=SURFACE, padx=8).pack(side="left", padx=6)
         self._label(lr, "To:").pack(side="left")
         self.tr_to_var = tk.StringVar(value="English")
-        ttk.Combobox(lr, textvariable=self.tr_to_var, values=LANG_TR_DISPLAY,
-                     state="readonly", width=18, font=("Segoe UI",9)).pack(side="left", padx=4)
+        self._searchable_combo(lr, self.tr_to_var, LANG_TR_DISPLAY, width=18,
+                                side="left", padx=4)
 
         sh = tk.Frame(f, bg=CARD); sh.pack(fill="x", padx=2)
         self._label(sh, "Source text:").pack(side="left")
@@ -1708,11 +1895,15 @@ class AIApp:
                             if text:
                                 self._push_words(text)
                                 self.root.after(0, lambda: self._set_stt_status("Listening...", GREEN))
+                        except OSError:
+                            raise   # PortAudio stream died - surface it, don't spin
                         except Exception:
                             self.root.after(0, lambda: self.live_word_var.set(""))
                             self.root.after(0, lambda: self._set_stt_status("Listening...", GREEN))
-            except RuntimeError as e:
-                self.root.after(0, lambda err=str(e): messagebox.showerror("Microphone Error", err))
+            except (RuntimeError, OSError) as e:
+                print(f"[AVS] STT mic error: {e!r}", flush=True)
+                _m = str(e) if isinstance(e, RuntimeError) else f"The microphone stream failed: {e}"
+                self.root.after(0, lambda err=_m: messagebox.showerror("Microphone Error", err))
                 self.root.after(0, lambda: self._set_stt_status("Mic error", RED))
                 self.root.after(0, lambda: self._stt_set_state("idle"))
                 self.is_listening = False
@@ -1748,11 +1939,15 @@ class AIApp:
                             if text:
                                 self._push_words(text)
                                 self.root.after(0, lambda: self._set_stt_status("Listening...", GREEN))
+                        except OSError:
+                            raise   # PortAudio stream died - surface it, don't spin
                         except Exception:
                             self.root.after(0, lambda: self.live_word_var.set(""))
                             self.root.after(0, lambda: self._set_stt_status("Listening...", GREEN))
-            except RuntimeError as e:
-                self.root.after(0, lambda err=str(e): messagebox.showerror("Microphone Error", err))
+            except (RuntimeError, OSError) as e:
+                print(f"[AVS] STT mic error: {e!r}", flush=True)
+                _m = str(e) if isinstance(e, RuntimeError) else f"The microphone stream failed: {e}"
+                self.root.after(0, lambda err=_m: messagebox.showerror("Microphone Error", err))
                 self.root.after(0, lambda: self._set_stt_status("Mic error", RED))
                 self.root.after(0, lambda: self._stt_set_state("idle"))
                 self.is_listening = False
