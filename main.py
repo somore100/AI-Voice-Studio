@@ -470,21 +470,26 @@ def safe_input_devices():
 
 def safe_default_input_index(pa):
     """Default input index, or a non-JACK fallback if the default is JACK."""
+    cands = []
+    for i in range(pa.get_device_count()):
+        d = pa.get_device_info_by_index(i)
+        if d.get("maxInputChannels", 0) > 0 and not _pa_is_jack(pa, d):
+            cands.append((i, d["name"].lower()))
+    # Session-level devices follow the desktop's chosen source AND its mute
+    # state; raw hw: devices (e.g. an unplugged headphone-jack input) don't.
+    for key in ("pipewire", "pulse"):
+        for i, n in cands:
+            if n == key:
+                return i
     try:
         d = pa.get_default_input_device_info()
         if not _pa_is_jack(pa, d):
             return d["index"]
     except Exception:
         pass
-    cands = []
-    for i in range(pa.get_device_count()):
-        d = pa.get_device_info_by_index(i)
-        if d.get("maxInputChannels", 0) > 0 and not _pa_is_jack(pa, d):
-            cands.append((i, d["name"].lower()))
-    for key in ("pipewire", "pulse", "default"):
-        for i, n in cands:
-            if key in n:
-                return i
+    for i, n in cands:
+        if n == "default":
+            return i
     if cands:
         return cands[0][0]
     raise OSError("No non-JACK input device found")
@@ -525,6 +530,20 @@ def resolve_input_index(pa, mic):
     raise RuntimeError(
         f"The selected microphone ({name or idx}) is no longer available. "
         "Pick a microphone from the dropdown again (or use System Default).")
+
+def _probe_mic_level(source, skip=0.2, measure=0.5):
+    """Read ~0.7s from an open sr.Microphone; return (rms, peak) of the last 0.5s."""
+    import array, math
+    per = source.CHUNK / float(source.SAMPLE_RATE)
+    for _ in range(max(1, int(skip / per))):
+        source.stream.read(source.CHUNK)
+    buf = b"".join(source.stream.read(source.CHUNK)
+                   for _ in range(max(1, int(measure / per))))
+    a = array.array("h")
+    a.frombytes(buf[: len(buf) - (len(buf) % 2)])
+    if not a:
+        return 0.0, 0
+    return math.sqrt(sum(x * x for x in a) / len(a)), max(abs(x) for x in a)
 
 def check_mic_access():
     """Actually try to open the default input device.
@@ -709,7 +728,11 @@ class AIApp:
         best_idx = auto_detect_mic(self.mics)
         self.mics_display = ["System Default"] + self.mics if self.mics else ["No microphone found"]
         self.mics_real = [None] + list(_pairs)   # (pa_index, name) tuples
-        default_display = self.mics_display[best_idx + 1] if self.mics else self.mics_display[0]
+        _has_session = any(n.lower() in ("pipewire", "pulse") for n in self.mics)
+        if self.mics and not _has_session:
+            default_display = self.mics_display[best_idx + 1]
+        else:
+            default_display = self.mics_display[0]   # "System Default"
         if initial:
             self.selected_mic = tk.StringVar(value=default_display)
         else:
@@ -788,6 +811,15 @@ class AIApp:
                     "picking a different microphone from the dropdown. "
                     "(PortAudio details are printed in the terminal.)"
                 )
+            _rms, _peak = _probe_mic_level(source)
+            print(f"[AVS] mic level: rms={_rms:.0f} peak={_peak}", flush=True)
+            if _peak <= 1:
+                raise RuntimeError(
+                    "This microphone is delivering pure silence. It is "
+                    "probably muted (check your keyboard's mic-mute key and "
+                    "the system sound settings) or the wrong input is "
+                    "selected. Unmute it or pick another microphone from "
+                    "the dropdown.")
             yield source
         finally:
             if source.stream is not None:
