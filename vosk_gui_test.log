@@ -1,0 +1,106 @@
+ALSA lib pcm_dsnoop.c:572:(snd_pcm_dsnoop_open) [error.pcm] unable to open slave
+ALSA lib pcm_dmix.c:1000:(snd_pcm_dmix_open) [error.pcm] unable to open slave
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.rear
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.center_lfe
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.side
+ALSA lib pcm_dmix.c:1000:(snd_pcm_dmix_open) [error.pcm] unable to open slave
+ALSA lib pcm_dsnoop.c:572:(snd_pcm_dsnoop_open) [error.pcm] unable to open slave
+ALSA lib pcm_dmix.c:1000:(snd_pcm_dmix_open) [error.pcm] unable to open slave
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.rear
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.center_lfe
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.side
+ALSA lib pcm_dmix.c:1000:(snd_pcm_dmix_open) [error.pcm] unable to open slave
+ALSA lib pcm_dsnoop.c:572:(snd_pcm_dsnoop_open) [error.pcm] unable to open slave
+ALSA lib pcm_dmix.c:1000:(snd_pcm_dmix_open) [error.pcm] unable to open slave
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.rear
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.center_lfe
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.side
+ALSA lib pcm_dmix.c:1000:(snd_pcm_dmix_open) [error.pcm] unable to open slave
+pygame 2.6.1 (SDL 2.28.4, Python 3.12.14)
+Hello from the pygame community. https://www.pygame.org/contribute.html
+[AVS] mic open: idx=6 name='pipewire' host=ALSA rate=44100.0
+ALSA lib pcm_dsnoop.c:572:(snd_pcm_dsnoop_open) [error.pcm] unable to open slave
+ALSA lib pcm_dmix.c:1000:(snd_pcm_dmix_open) [error.pcm] unable to open slave
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.rear
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.center_lfe
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.side
+ALSA lib pcm_dmix.c:1000:(snd_pcm_dmix_open) [error.pcm] unable to open slave
+ALSA lib pcm_dsnoop.c:572:(snd_pcm_dsnoop_open) [error.pcm] unable to open slave
+ALSA lib pcm_dmix.c:1000:(snd_pcm_dmix_open) [error.pcm] unable to open slave
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.rear
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.center_lfe
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.side
+ALSA lib pcm_dmix.c:1000:(snd_pcm_dmix_open) [error.pcm] unable to open slave
+[AVS] mic level (DC removed): rms=1800 peak=2882 dc=8655
+ALSA lib pcm_dsnoop.c:572:(snd_pcm_dsnoop_open) [error.pcm] unable to open slave
+ALSA lib pcm_dmix.c:1000:(snd_pcm_dmix_open) [error.pcm] unable to open slave
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.rear
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.center_lfe
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.side
+ALSA lib pcm_dmix.c:1000:(snd_pcm_dmix_open) [error.pcm] unable to open slave
+[AVS] mic open: idx=5 name='pipewire' host=ALSA rate=44100.0
+ALSA lib pcm_dsnoop.c:572:(snd_pcm_dsnoop_open) [error.pcm] unable to open slave
+ALSA lib pcm_dmix.c:1000:(snd_pcm_dmix_open) [error.pcm] unable to open slave
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.rear
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.center_lfe
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.side
+ALSA lib pcm_dmix.c:1000:(snd_pcm_dmix_open) [error.pcm] unable to open slave
+ALSA lib pcm_dsnoop.c:572:(snd_pcm_dsnoop_open) [error.pcm] unable to open slave
+ALSA lib pcm_dmix.c:1000:(snd_pcm_dmix_open) [error.pcm] unable to open slave
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.rear
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.center_lfe
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.side
+ALSA lib pcm_dmix.c:1000:(snd_pcm_dmix_open) [error.pcm] unable to open slave
+[AVS] mic level (DC removed): rms=24 peak=96 dc=8921
+[AVS] mic open: idx=5 name='pipewire' host=ALSA rate=44100.0
+[AVS] mic level (DC removed): rms=23 peak=88 dc=8852
+LOG (VoskAPI:ReadDataFiles():model.cc:213) Decoding params beam=10 max-active=3000 lattice-beam=2
+LOG (VoskAPI:ReadDataFiles():model.cc:216) Silence phones 1:2:3:4:5:6:7:8:9:10
+LOG (VoskAPI:RemoveOrphanNodes():nnet-nnet.cc:948) Removed 0 orphan nodes.
+LOG (VoskAPI:RemoveOrphanComponents():nnet-nnet.cc:847) Removing 0 orphan components.
+LOG (VoskAPI:ReadDataFiles():model.cc:248) Loading i-vector extractor from /home/domore100/Documents/Hot/programs/Local/ai_voice_studio/models/vosk/en/ivector/final.ie
+LOG (VoskAPI:ComputeDerivedVars():ivector-extractor.cc:183) Computing derived variables for iVector extractor
+LOG (VoskAPI:ComputeDerivedVars():ivector-extractor.cc:204) Done.
+LOG (VoskAPI:ReadDataFiles():model.cc:282) Loading HCL and G from /home/domore100/Documents/Hot/programs/Local/ai_voice_studio/models/vosk/en/graph/HCLr.fst /home/domore100/Documents/Hot/programs/Local/ai_voice_studio/models/vosk/en/graph/Gr.fst
+LOG (VoskAPI:ReadDataFiles():model.cc:308) Loading winfo /home/domore100/Documents/Hot/programs/Local/ai_voice_studio/models/vosk/en/graph/phones/word_boundary.int
+ALSA lib pcm_dsnoop.c:572:(snd_pcm_dsnoop_open) [error.pcm] unable to open slave
+ALSA lib pcm_dmix.c:1000:(snd_pcm_dmix_open) [error.pcm] unable to open slave
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.rear
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.center_lfe
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.side
+ALSA lib pcm_dmix.c:1000:(snd_pcm_dmix_open) [error.pcm] unable to open slave
+[AVS] mic open: idx=6 name='pipewire' host=ALSA rate=44100.0
+ALSA lib pcm_dsnoop.c:572:(snd_pcm_dsnoop_open) [error.pcm] unable to open slave
+ALSA lib pcm_dmix.c:1000:(snd_pcm_dmix_open) [error.pcm] unable to open slave
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.rear
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.center_lfe
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.side
+ALSA lib pcm_dmix.c:1000:(snd_pcm_dmix_open) [error.pcm] unable to open slave
+ALSA lib pcm_dsnoop.c:572:(snd_pcm_dsnoop_open) [error.pcm] unable to open slave
+ALSA lib pcm_dmix.c:1000:(snd_pcm_dmix_open) [error.pcm] unable to open slave
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.rear
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.center_lfe
+ALSA lib pcm.c:2722:(snd_pcm_open_noupdate) [error.pcm] Unknown PCM cards.pcm.side
+ALSA lib pcm_dmix.c:1000:(snd_pcm_dmix_open) [error.pcm] unable to open slave
+[AVS] mic level (DC removed): rms=1709 peak=2823 dc=8792
+Exception in thread Thread-6 (_vosk_download_many):
+Traceback (most recent call last):
+  File "/home/domore100/Documents/Hot/programs/Local/ai_voice_studio/main.py", line 2520, in _vosk_download_one
+    shutil.move(cand, final)
+    ^^^^^^
+NameError: name 'shutil' is not defined. Did you forget to import 'shutil'?
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/lib64/python3.12/threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "/usr/lib64/python3.12/threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "/home/domore100/Documents/Hot/programs/Local/ai_voice_studio/main.py", line 2532, in _vosk_download_many
+    ok, err = self._vosk_download_one(code, title)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/domore100/Documents/Hot/programs/Local/ai_voice_studio/main.py", line 2524, in _vosk_download_one
+    shutil.rmtree(work, ignore_errors=True)
+    ^^^^^^
+NameError: name 'shutil' is not defined. Did you forget to import 'shutil'?

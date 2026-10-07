@@ -1,0 +1,15 @@
+==239488== Memcheck, a memory error detector
+==239488== Copyright (C) 2002-2026, and GNU GPL'd, by Julian Seward et al.
+==239488== Using Valgrind-3.27.1 and LibVEX; rerun with -h for copyright info
+==239488== Command: python jack_repro.py alsa
+==239488== Parent PID: 25119
+==239488== 
+==239488== 
+==239488== HEAP SUMMARY:
+==239488==     in use at exit: 217,954 bytes in 3,463 blocks
+==239488==   total heap usage: 81,678 allocs, 78,215 frees, 12,499,531 bytes allocated
+==239488== 
+==239488== For a detailed leak analysis, rerun with: --leak-check=full
+==239488== 
+==239488== For lists of detected and suppressed errors, rerun with: -s
+==239488== ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)

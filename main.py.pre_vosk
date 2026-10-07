@@ -242,7 +242,7 @@ def get_vosk_model(lang_code):
     if lang_code not in _vosk_models:
         from vosk import Model
         model_path = os.path.join(VOSK_MODEL_DIR, lang_code)
-        if not _vosk_model_ok(model_path):
+        if not os.path.isdir(model_path):
             raise FileNotFoundError(
                 f"Vosk model for '{lang_code}' not found at:\n{model_path}\n\n"
                 f"Download from https://alphacephei.com/vosk/models\n"
@@ -1982,7 +1982,7 @@ class AIApp:
             try:
                 vosk_model = get_vosk_model(vlang)
             except FileNotFoundError as e:
-                self.root.after(0, lambda e=e, v=vlang: self._vosk_missing_prompt(v, str(e)))
+                self.root.after(0, lambda: messagebox.showerror("Vosk Model Missing", str(e)))
                 self.root.after(0, lambda: self._set_stt_status("Model not found", RED))
                 self.root.after(0, lambda: self._stt_set_state("idle"))
                 self.is_listening = False; return
@@ -2084,7 +2084,6 @@ def _build_models_frame(self):
         *tts_engine_rows,
         ("tts_pkg",  "Coqui TTS package",     "pip",      "TTS engine"),
         ("whisper_pkg","Whisper package",      "pip",      "STT engine"),
-        ("vosk_models", "Vosk models", "~40MB ea", "Per-language STT models"),
         ("vosk_pkg", "Vosk package",           "pip",      "Lightweight STT"),
     ]
 
@@ -2119,10 +2118,7 @@ def _build_models_frame(self):
     # Wire individual install buttons
     for key, name, size, desc in models:
         status, btn = self._model_rows[key]
-        if key == "vosk_models":
-            btn.config(command=self._vosk_pick_dialog)
-        else:
-            btn.config(command=lambda k=key: self._download_one(k))
+        btn.config(command=lambda k=key: self._download_one(k))
 
     # Check on startup
     self.root.after(800, self._check_models)
@@ -2195,11 +2191,6 @@ def _do_check_models(self):
             ok = False
         self.root.after(0, lambda k=key, o=ok: self._set_model_status(
             k, o, "Ready" if o else "Missing"))
-    # Vosk per-language models
-    try:
-        self._vosk_refresh_status()
-    except Exception:
-        pass
 
 
 def _ensure_engine_tos(self, key):
@@ -2401,311 +2392,6 @@ def _do_download_model(self, key):
             self._dl_bar.config(mode="indeterminate")
             self._dl_bar.start(12)
         self.root.after(0, _reset_bar)
-
-
-# -- Vosk per-language models -------------------------------------------
-# Small models from https://alphacephei.com/vosk/models (model-list.json).
-# Key = the app's Vosk code (LANGUAGES[i][2]); value = (zip/folder name, approx MB).
-# Slovenian ("sl") and Croatian ("hr") have no small model, so they are absent.
-VOSK_BASE_URL = "https://alphacephei.com/vosk/models"
-VOSK_MODELS = {
-    "en": ("vosk-model-small-en-us-0.15", 39),
-    "ru": ("vosk-model-small-ru-0.22", 44),
-    "de": ("vosk-model-small-de-0.15", 44),
-    "fr": ("vosk-model-small-fr-0.22", 40),
-    "es": ("vosk-model-small-es-0.42", 38),
-    "it": ("vosk-model-small-it-0.22", 47),
-    "ja": ("vosk-model-small-ja-0.22", 47),
-    "zh": ("vosk-model-small-cn-0.22", 42),
-    "pt": ("vosk-model-small-pt-0.3", 31),
-    "pl": ("vosk-model-small-pl-0.22", 51),
-    "cs": ("vosk-model-small-cs-0.4-rhasspy", 44),
-    "nl": ("vosk-model-small-nl-0.22", 39),
-    "tr": ("vosk-model-small-tr-0.3", 35),
-    "ko": ("vosk-model-small-ko-0.22", 83),
-    "ar": ("vosk-model-small-ar-0.3", 100),
-}
-_VOSK_LANG_NAMES = {l[2]: l[0] for l in LANGUAGES}
-
-
-import shutil  # vosk download
-
-def _vosk_model_ok(path):
-    """A real Vosk model folder has am/ and conf/ inside it."""
-    return (os.path.isdir(os.path.join(path, "am"))
-            and os.path.isdir(os.path.join(path, "conf")))
-
-
-def _vosk_refresh_status(self):
-    """Count installed per-language models and update the Models row."""
-    n = sum(1 for c in VOSK_MODELS
-            if _vosk_model_ok(os.path.join(VOSK_MODEL_DIR, c)))
-    total = len(VOSK_MODELS)
-    self.root.after(0, lambda: self._set_model_status(
-        "vosk_models", n == total, f"{n}/{total} langs"))
-
-
-def _vosk_progress(self, title, done, total):
-    mb = done / 1048576
-    def _u():
-        try:
-            if total:
-                pct = min(100, int(done * 100 / total))
-                if str(self._dl_bar["mode"]) != "determinate":
-                    self._dl_bar.stop()
-                    self._dl_bar.config(mode="determinate", maximum=100)
-                self._dl_bar["value"] = pct
-                self._dl_label.config(
-                    text=f"{title}... {mb:.0f}/{total / 1048576:.0f} MB ({pct}%)",
-                    fg=YELLOW)
-            else:
-                self._dl_label.config(text=f"{title}... {mb:.0f} MB", fg=YELLOW)
-        except Exception:
-            pass
-    self.root.after(0, _u)
-
-
-def _vosk_find_model_root(base, max_depth=4):
-    """Return the first folder under base that looks like a Vosk model."""
-    base_depth = base.rstrip(os.sep).count(os.sep)
-    for root, dirs, _files in os.walk(base):
-        if root.count(os.sep) - base_depth > max_depth:
-            dirs[:] = []
-            continue
-        if _vosk_model_ok(root):
-            return root
-    return None
-
-
-def _vosk_layout(base, limit=14):
-    """Short text listing of an extracted zip (2 levels) for error messages."""
-    out = []
-    base_depth = base.rstrip(os.sep).count(os.sep)
-    for root, dirs, files in os.walk(base):
-        depth = root.count(os.sep) - base_depth
-        if depth >= 2:
-            dirs[:] = []
-        for d in sorted(dirs):
-            out.append(os.path.relpath(os.path.join(root, d), base) + "/")
-        if depth < 2:
-            for f in sorted(files):
-                if not f.endswith(".zip"):
-                    out.append(os.path.relpath(os.path.join(root, f), base))
-    if len(out) > limit:
-        out = out[:limit] + ["..."]
-    return ", ".join(out) or "(empty)"
-
-
-def _vosk_download_one(self, code, title):
-    """Download + verify + install one model. Returns (ok, error_text)."""
-    import urllib.request, zipfile, tempfile, time
-    name, _mb = VOSK_MODELS[code]
-    url = f"{VOSK_BASE_URL}/{name}.zip"
-    os.makedirs(VOSK_MODEL_DIR, exist_ok=True)
-    work = tempfile.mkdtemp(prefix=f"dl_{code}_", dir=VOSK_MODEL_DIR)
-    zpath = os.path.join(work, name + ".zip")
-    try:
-        last_err = "unknown error"
-        for attempt in range(1, 4):
-            try:
-                req = urllib.request.Request(
-                    url, headers={"User-Agent": "AI-Voice-Studio"})
-                done = 0
-                total = 0
-                with urllib.request.urlopen(req, timeout=30) as resp, \
-                        open(zpath, "wb") as out:
-                    total = int(resp.headers.get("Content-Length") or 0)
-                    while True:
-                        chunk = resp.read(256 * 1024)
-                        if not chunk:
-                            break
-                        out.write(chunk)
-                        done += len(chunk)
-                        self._vosk_progress(title, done, total)
-                if total and done != total:
-                    raise IOError(f"incomplete download ({done}/{total} bytes)")
-                with zipfile.ZipFile(zpath) as z:
-                    bad = z.testzip()
-                    if bad:
-                        raise IOError(f"corrupt zip member {bad}")
-                    z.extractall(work)
-                last_err = ""
-                break
-            except Exception as e:
-                last_err = f"{type(e).__name__}: {e}"
-                if attempt < 3:
-                    time.sleep(3 * attempt)
-        if last_err:
-            return False, last_err
-
-        cand = os.path.join(work, name)
-        if not os.path.isdir(cand):
-            dirs = [d for d in os.listdir(work)
-                    if os.path.isdir(os.path.join(work, d))]
-            if len(dirs) != 1:
-                return False, "unexpected zip layout"
-            cand = os.path.join(work, dirs[0])
-        if not _vosk_model_ok(cand):
-            found = _vosk_find_model_root(work)
-            if not found:
-                return False, ("downloaded folder is not a valid Vosk model."
-                               " Zip contents: " + _vosk_layout(work))
-            cand = found
-        final = os.path.join(VOSK_MODEL_DIR, code)
-        if os.path.isdir(final):
-            shutil.rmtree(final)
-        shutil.move(cand, final)
-        _vosk_models.pop(code, None)
-        return True, ""
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
-
-
-def _vosk_download_many(self, codes):
-    results = []
-    try:
-        for i, code in enumerate(codes, 1):
-            title = f"Vosk {_VOSK_LANG_NAMES.get(code, code)} ({i}/{len(codes)})"
-            ok, err = self._vosk_download_one(code, title)
-            results.append((code, ok, err))
-    finally:
-        self._vosk_dl_busy = False
-
-    def _done():
-        try:
-            self._dl_bar.stop()
-            self._dl_bar.config(mode="indeterminate", value=0)
-        except Exception:
-            pass
-        bad = [(c, e) for c, ok, e in results if not ok]
-        good = [c for c, ok, _ in results if ok]
-        if bad:
-            msg = "\n".join(f"{_VOSK_LANG_NAMES.get(c, c)}: {e}" for c, e in bad)
-            try:
-                self._dl_label.config(text="Vosk download failed", fg=RED)
-            except Exception:
-                pass
-            messagebox.showerror("Vosk download failed", msg)
-        if good:
-            names = ", ".join(_VOSK_LANG_NAMES.get(c, c) for c in good)
-            try:
-                self._dl_label.config(text=f"Vosk installed: {names}", fg=GREEN)
-            except Exception:
-                pass
-            messagebox.showinfo("Vosk model installed",
-                                f"Installed: {names}\n\nPress Start again to use it.")
-        self._check_models()
-    self.root.after(0, _done)
-
-
-def _vosk_download_async(self, codes):
-    """Main thread only."""
-    if getattr(self, "_vosk_dl_busy", False):
-        messagebox.showinfo("Vosk", "A Vosk download is already running.")
-        return
-    self._vosk_dl_busy = True
-    threading.Thread(target=self._vosk_download_many,
-                     args=(list(codes),), daemon=True).start()
-
-
-def _vosk_missing_prompt(self, code, msg):
-    """Replaces the dead-end 'Vosk Model Missing' dialog. Main thread."""
-    name = _VOSK_LANG_NAMES.get(code, code)
-    info = VOSK_MODELS.get(code)
-    if info is None:
-        messagebox.showinfo(
-            "Vosk not available",
-            f"Vosk has no ready-made small model for {name}.\n\n"
-            f"Use Whisper for this language instead.")
-        return
-    if messagebox.askyesno(
-            "Vosk model not installed",
-            f"The Vosk model for {name} isn't installed.\n\n"
-            f"Download it now (~{info[1]} MB)?"):
-        self._vosk_download_async([code])
-
-
-def _vosk_pick_dialog(self):
-    """Install button on the 'Vosk models' row: pick languages to download."""
-    top = tk.Toplevel(self.root)
-    top.title("Vosk language models")
-    top.configure(bg=BG)
-    top.transient(self.root)
-    tk.Label(top, text="Select languages to download (small models):",
-             bg=BG, fg=FG, font=("Segoe UI", 9, "bold")).pack(
-                 anchor="w", padx=12, pady=(12, 4))
-    codes = list(VOSK_MODELS)
-    lb = tk.Listbox(top, selectmode="extended", height=len(codes), width=44,
-                    bg=CARD, fg=FG, selectbackground=BLUE,
-                    selectforeground=BG, relief="flat", bd=0,
-                    exportselection=False, font="TkFixedFont")
-    for c in codes:
-        inst = _vosk_model_ok(os.path.join(VOSK_MODEL_DIR, c))
-        lb.insert("end", f"{_VOSK_LANG_NAMES.get(c, c):<12} ~{VOSK_MODELS[c][1]:>3} MB"
-                         f"   {'[installed]' if inst else ''}")
-    lb.pack(padx=12, pady=4)
-    tk.Label(top, text="Slovenian and Croatian: no Vosk model exists - use Whisper.",
-             bg=BG, fg=FG_DIM, font=("Segoe UI", 8)).pack(anchor="w", padx=12)
-
-    def _select_missing():
-        lb.selection_clear(0, "end")
-        for i, c in enumerate(codes):
-            if not _vosk_model_ok(os.path.join(VOSK_MODEL_DIR, c)):
-                lb.selection_set(i)
-
-    def _go():
-        sel = [codes[i] for i in lb.curselection()]
-        if not sel:
-            return
-        top.destroy()
-        self._vosk_download_async(sel)
-
-    br = tk.Frame(top, bg=BG)
-    br.pack(pady=10)
-    tk.Button(br, text="Select missing", command=_select_missing, bg=CARD,
-              fg=FG, relief="flat", bd=0, padx=10, pady=3,
-              font=("Segoe UI", 8, "bold")).pack(side="left", padx=4)
-    def _uninstall():
-        sel = [codes[i] for i in lb.curselection()
-               if os.path.isdir(os.path.join(VOSK_MODEL_DIR, codes[i]))]
-        if not sel:
-            messagebox.showinfo("Uninstall",
-                                "None of the selected languages are installed.",
-                                parent=top)
-            return
-        names = ", ".join(_VOSK_LANG_NAMES.get(c, c) for c in sel)
-        if not messagebox.askyesno(
-                "Uninstall Vosk models",
-                f"Delete the Vosk model for: {names}?\n\n"
-                f"You can download it again later.", parent=top):
-            return
-        failed = []
-        for c in sel:
-            try:
-                shutil.rmtree(os.path.join(VOSK_MODEL_DIR, c))
-                _vosk_models.pop(c, None)
-            except Exception as e:
-                failed.append(f"{_VOSK_LANG_NAMES.get(c, c)}: {e}")
-        top.destroy()
-        self._vosk_refresh_status()
-        if failed:
-            messagebox.showerror("Uninstall failed", "\n".join(failed))
-
-    tk.Button(br, text="Download selected", command=_go, bg=GREEN, fg=BG,
-              relief="flat", bd=0, padx=10, pady=3,
-              font=("Segoe UI", 8, "bold")).pack(side="left", padx=4)
-    tk.Button(br, text="Uninstall selected", command=_uninstall, bg=RED, fg=BG,
-              relief="flat", bd=0, padx=10, pady=3,
-              font=("Segoe UI", 8, "bold")).pack(side="left", padx=4)
-
-
-AIApp._vosk_refresh_status  = _vosk_refresh_status
-AIApp._vosk_progress        = _vosk_progress
-AIApp._vosk_download_one    = _vosk_download_one
-AIApp._vosk_download_many   = _vosk_download_many
-AIApp._vosk_download_async  = _vosk_download_async
-AIApp._vosk_missing_prompt  = _vosk_missing_prompt
-AIApp._vosk_pick_dialog     = _vosk_pick_dialog
 
 
 # Patch these methods onto AIApp

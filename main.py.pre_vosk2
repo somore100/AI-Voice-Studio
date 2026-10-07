@@ -2465,37 +2465,6 @@ def _vosk_progress(self, title, done, total):
     self.root.after(0, _u)
 
 
-def _vosk_find_model_root(base, max_depth=4):
-    """Return the first folder under base that looks like a Vosk model."""
-    base_depth = base.rstrip(os.sep).count(os.sep)
-    for root, dirs, _files in os.walk(base):
-        if root.count(os.sep) - base_depth > max_depth:
-            dirs[:] = []
-            continue
-        if _vosk_model_ok(root):
-            return root
-    return None
-
-
-def _vosk_layout(base, limit=14):
-    """Short text listing of an extracted zip (2 levels) for error messages."""
-    out = []
-    base_depth = base.rstrip(os.sep).count(os.sep)
-    for root, dirs, files in os.walk(base):
-        depth = root.count(os.sep) - base_depth
-        if depth >= 2:
-            dirs[:] = []
-        for d in sorted(dirs):
-            out.append(os.path.relpath(os.path.join(root, d), base) + "/")
-        if depth < 2:
-            for f in sorted(files):
-                if not f.endswith(".zip"):
-                    out.append(os.path.relpath(os.path.join(root, f), base))
-    if len(out) > limit:
-        out = out[:limit] + ["..."]
-    return ", ".join(out) or "(empty)"
-
-
 def _vosk_download_one(self, code, title):
     """Download + verify + install one model. Returns (ok, error_text)."""
     import urllib.request, zipfile, tempfile, time
@@ -2546,11 +2515,7 @@ def _vosk_download_one(self, code, title):
                 return False, "unexpected zip layout"
             cand = os.path.join(work, dirs[0])
         if not _vosk_model_ok(cand):
-            found = _vosk_find_model_root(work)
-            if not found:
-                return False, ("downloaded folder is not a valid Vosk model."
-                               " Zip contents: " + _vosk_layout(work))
-            cand = found
+            return False, "downloaded folder is not a valid Vosk model"
         final = os.path.join(VOSK_MODEL_DIR, code)
         if os.path.isdir(final):
             shutil.rmtree(final)
@@ -2665,36 +2630,7 @@ def _vosk_pick_dialog(self):
     tk.Button(br, text="Select missing", command=_select_missing, bg=CARD,
               fg=FG, relief="flat", bd=0, padx=10, pady=3,
               font=("Segoe UI", 8, "bold")).pack(side="left", padx=4)
-    def _uninstall():
-        sel = [codes[i] for i in lb.curselection()
-               if os.path.isdir(os.path.join(VOSK_MODEL_DIR, codes[i]))]
-        if not sel:
-            messagebox.showinfo("Uninstall",
-                                "None of the selected languages are installed.",
-                                parent=top)
-            return
-        names = ", ".join(_VOSK_LANG_NAMES.get(c, c) for c in sel)
-        if not messagebox.askyesno(
-                "Uninstall Vosk models",
-                f"Delete the Vosk model for: {names}?\n\n"
-                f"You can download it again later.", parent=top):
-            return
-        failed = []
-        for c in sel:
-            try:
-                shutil.rmtree(os.path.join(VOSK_MODEL_DIR, c))
-                _vosk_models.pop(c, None)
-            except Exception as e:
-                failed.append(f"{_VOSK_LANG_NAMES.get(c, c)}: {e}")
-        top.destroy()
-        self._vosk_refresh_status()
-        if failed:
-            messagebox.showerror("Uninstall failed", "\n".join(failed))
-
     tk.Button(br, text="Download selected", command=_go, bg=GREEN, fg=BG,
-              relief="flat", bd=0, padx=10, pady=3,
-              font=("Segoe UI", 8, "bold")).pack(side="left", padx=4)
-    tk.Button(br, text="Uninstall selected", command=_uninstall, bg=RED, fg=BG,
               relief="flat", bd=0, padx=10, pady=3,
               font=("Segoe UI", 8, "bold")).pack(side="left", padx=4)
 
