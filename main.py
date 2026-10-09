@@ -2130,9 +2130,14 @@ def _build_models_frame(self):
 
 def _set_model_status(self, key, ok, text=None):
     status, btn = self._model_rows[key]
+    if key == "vosk_models":
+        btn.config(text="Manage")
     if ok is True:
         status.config(text=text or "OK", fg=GREEN)
-        btn.pack_forget()
+        if key == "vosk_models":
+            btn.pack(side="right", padx=4)
+        else:
+            btn.pack_forget()
     elif ok is False:
         status.config(text=text or "Missing", fg=RED)
         btn.pack(side="right", padx=4)
@@ -2432,8 +2437,12 @@ import shutil  # vosk download
 
 def _vosk_model_ok(path):
     """A real Vosk model folder has am/ and conf/ inside it."""
-    return (os.path.isdir(os.path.join(path, "am"))
-            and os.path.isdir(os.path.join(path, "conf")))
+    if (os.path.isdir(os.path.join(path, "am"))
+            and os.path.isdir(os.path.join(path, "conf"))):
+        return True
+    # older flat layout (e.g. small pt / tr models)
+    return (os.path.isfile(os.path.join(path, "final.mdl"))
+            and os.path.isfile(os.path.join(path, "mfcc.conf")))
 
 
 def _vosk_refresh_status(self):
@@ -2631,7 +2640,7 @@ def _vosk_pick_dialog(self):
     top.title("Vosk language models")
     top.configure(bg=BG)
     top.transient(self.root)
-    tk.Label(top, text="Select languages to download (small models):",
+    tk.Label(top, text="Select languages, then Download or Uninstall:",
              bg=BG, fg=FG, font=("Segoe UI", 9, "bold")).pack(
                  anchor="w", padx=12, pady=(12, 4))
     codes = list(VOSK_MODELS)
