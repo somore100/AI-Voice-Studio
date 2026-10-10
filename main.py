@@ -1068,6 +1068,22 @@ class AIApp:
         self._btn(spd, "Reset", lambda: self.tts_speed.set(1.0),
                   color=SURFACE, padx=6).pack(side="left", padx=4)
 
+        # Pitch slider (post-process, works with every engine)
+        pch = tk.Frame(f, bg=CARD); pch.pack(fill="x", padx=2, pady=4)
+        self._label(pch, "Pitch:").pack(side="left")
+        self.tts_pitch = tk.DoubleVar(value=0.0)
+        ttk.Scale(pch, from_=-12.0, to=12.0, orient="horizontal",
+                  variable=self.tts_pitch, length=200).pack(side="left", padx=6)
+        self._pitch_label = tk.Label(pch, text="+0.0", bg=CARD, fg=CYAN,
+                                     font=("Segoe UI",9,"bold"), width=5)
+        self._pitch_label.pack(side="left")
+        self.tts_pitch.trace_add("write", lambda *_: self._pitch_label.config(
+            text=f"{self.tts_pitch.get():+.1f}"))
+        self._btn(pch, "Reset", lambda: self.tts_pitch.set(0.0),
+                  color=SURFACE, padx=6).pack(side="left", padx=4)
+        self._fx_track(self.tts_speed, "speed")
+        self._fx_track(self.tts_pitch, "pitch")
+
         fldr = tk.Frame(f, bg=CARD); fldr.pack(fill="x", padx=2, pady=4)
         self._label(fldr, "Save to:").pack(side="left")
         self.save_path_var = tk.StringVar(
@@ -1595,6 +1611,8 @@ class AIApp:
         self._vc_speed_lbl.pack(side="left")
         self.vc_speed.trace_add("write", lambda *_: self._vc_speed_lbl.config(
             text=f"{self.vc_speed.get():.1f}x"))
+        self._fx_track(self.vc_speed, "vc_speed")
+        self._fx_track(self.vc_pitch, "vc_pitch")
 
         # Pipeline mode
         pl = tk.Frame(f, bg=CARD); pl.pack(fill="x", padx=2, pady=3)
@@ -1682,6 +1700,7 @@ class AIApp:
                             lang = LANG_XTTS.get(self.xtts_lang_var.get(), "en")
                             TTS_ENGINES["xtts"].synthesize(
                                 text, self._xtts_voice_arg(), tmp.name, lang)
+                        self._apply_tts_fx(tmp.name, "vc_speed", "vc_pitch")
                         print(f"[AVS] VC speak ready in {time.time()-t0:.1f}s")
                         pygame.mixer.music.load(tmp.name)
                         pygame.mixer.music.play()
@@ -1831,6 +1850,7 @@ class AIApp:
                 TTS_ENGINES["xtts"].synthesize(text, self._xtts_voice_arg(), tmp.name, lang)
             else:
                 TTS_ENGINES["vctk"].synthesize(text, sid, tmp.name)
+            self._apply_tts_fx(tmp.name, "speed", "pitch")
             print(f"[AVS] Preview ready in {time.time()-t0:.1f}s -> {tmp.name}")
             pygame.mixer.music.load(tmp.name); pygame.mixer.music.play()
             self.root.after(0, self._stop_loading)
@@ -1874,6 +1894,7 @@ class AIApp:
                 TTS_ENGINES["xtts"].synthesize(text, self._xtts_voice_arg(), out, lang)
             else:
                 TTS_ENGINES["vctk"].synthesize(text, sid, out)
+            self._apply_tts_fx(out, "speed", "pitch")
             print(f"[AVS] Saved in {time.time()-t0:.1f}s -> {out}")
             self.root.after(0, self._stop_loading)
             self.root.after(0, lambda: messagebox.showinfo("Saved!", f"Audio saved to:\n{out}"))
@@ -2072,6 +2093,7 @@ def _build_models_frame(self):
 
     # Status rows
     self._model_rows = {}
+    self._model_unins = {}
     # TTS engine rows are generated from the registry (engines/registry.py)
     # so adding a new engine there automatically gets a row here too -
     # nothing in this function needs to change.
@@ -2103,6 +2125,12 @@ def _build_models_frame(self):
                         relief="flat", cursor="hand2", padx=8, pady=2,
                         font=("Segoe UI",8,"bold"), bd=0)
         self._model_rows[key] = (status, btn)
+        if key == "whisper" or key in TTS_ENGINES:
+            self._model_unins[key] = tk.Button(
+                row, text="Uninstall", bg=SURFACE, fg=RED, relief="flat",
+                cursor="hand2", padx=8, pady=2, bd=0,
+                font=("Segoe UI",8,"bold"),
+                command=lambda k=key: self._uninstall_model(k))
 
     # Progress
     self._dl_label = self._label(f, "", fg=FG_DIM, font=("Segoe UI",8))
@@ -2130,6 +2158,12 @@ def _build_models_frame(self):
 
 def _set_model_status(self, key, ok, text=None):
     status, btn = self._model_rows[key]
+    _ub = getattr(self, "_model_unins", {}).get(key)
+    if _ub is not None:
+        if ok is True:
+            _ub.pack(side="right", padx=4)
+        else:
+            _ub.pack_forget()
     if key == "vosk_models":
         btn.config(text="Manage")
     if ok is True:
@@ -2717,7 +2751,127 @@ AIApp._vosk_missing_prompt  = _vosk_missing_prompt
 AIApp._vosk_pick_dialog     = _vosk_pick_dialog
 
 
+import shutil  # uninstall
+
+
+def _model_paths(key):
+    """Existing files/folders that hold model `key`'s data - nothing else."""
+    from engines.paths import get_tts_cache_dir
+    found = []
+    if key == "whisper":
+        home = os.path.expanduser("~")
+        xdg = os.environ.get("XDG_CACHE_HOME") or os.path.join(home, ".cache")
+        found += [os.path.join(WHISPER_MODEL_DIR, "small.pt"),
+                  os.path.join(xdg, "whisper", "small.pt"),
+                  os.path.join(home, ".cache", "whisper", "small.pt")]
+    elif key in ("vctk", "xtts"):
+        sub = {"vctk": "vctk", "xtts": "xtts_v2"}[key]
+        found.append(os.path.join(_MODELS_BASE, sub))
+        cache = get_tts_cache_dir()
+        if os.path.isdir(cache):
+            found += [os.path.join(cache, d) for d in sorted(os.listdir(cache))
+                      if sub in d]
+    out, seen = [], set()
+    for p in found:
+        rp = os.path.realpath(p)
+        # safety: never anything shallower than /x/y/z
+        if rp in seen or not os.path.exists(rp) or len(rp.split(os.sep)) < 4:
+            continue
+        seen.add(rp)
+        out.append(p)
+    return out
+
+
+def _path_size(p):
+    if os.path.isfile(p):
+        return os.path.getsize(p)
+    total = 0
+    for root, _d, files in os.walk(p):
+        for f in files:
+            try:
+                total += os.path.getsize(os.path.join(root, f))
+            except OSError:
+                pass
+    return total
+
+
+def _uninstall_model(self, key):
+    global _whisper_model
+    paths = _model_paths(key)
+    if not paths:
+        messagebox.showinfo("Uninstall", "No files found for this model.")
+        return
+    lines = [f"{p}  ({_path_size(p) / 1048576:.0f} MB)" for p in paths]
+    total = sum(_path_size(p) for p in paths) / 1048576
+    if not messagebox.askyesno(
+            "Uninstall model",
+            "Delete these files?\n\n" + "\n".join(lines) +
+            f"\n\nTotal: {total:.0f} MB. You can download the model again "
+            f"later."):
+        return
+
+    def _work():
+        failed = []
+        for p in paths:
+            try:
+                if os.path.isdir(p):
+                    shutil.rmtree(p)
+                else:
+                    os.remove(p)
+            except Exception as e:
+                failed.append(f"{p}: {e}")
+        # drop the in-memory copy so the next use reloads (or reports missing)
+        try:
+            if key == "whisper":
+                _whisper_model = None
+            else:
+                mod = sys.modules.get({"vctk": "engines.coqui_vctk",
+                                       "xtts": "engines.coqui_xtts"}[key])
+                if mod is not None:
+                    mod._instance = None
+        except Exception:
+            pass
+        def _done():
+            if failed:
+                messagebox.showerror("Uninstall failed", "\n".join(failed))
+            self._check_models()
+        self.root.after(0, _done)
+
+    threading.Thread(target=_work, daemon=True).start()
+
+
+def _fx_track(self, var, key):
+    """Mirror a Tk variable into a plain dict so worker threads can read
+    it safely (calling .get() on a Tk variable off the main thread isn't)."""
+    vals = self.__dict__.setdefault(
+        "_fx_vals",
+        {"speed": 1.0, "pitch": 0.0, "vc_speed": 1.0, "vc_pitch": 0.0})
+    def _upd(*_):
+        try:
+            vals[key] = float(var.get())
+        except Exception:
+            pass
+    var.trace_add("write", _upd)
+    _upd()
+
+
+def _apply_tts_fx(self, path, speed_key, pitch_key):
+    vals = getattr(self, "_fx_vals", {})
+    sp = vals.get(speed_key, 1.0)
+    pt = vals.get(pitch_key, 0.0)
+    try:
+        import audio_fx
+        if audio_fx.apply_fx(path, sp, pt):
+            print(f"[AVS] FX applied: speed={sp:.2f} pitch={pt:+.1f}st")
+    except Exception:
+        print("[AVS] FX skipped (audio unchanged):")
+        traceback.print_exc()
+
+
 # Patch these methods onto AIApp
+AIApp._fx_track = _fx_track
+AIApp._apply_tts_fx = _apply_tts_fx
+AIApp._uninstall_model = _uninstall_model
 AIApp._build_models_frame    = _build_models_frame
 AIApp._set_model_status      = _set_model_status
 AIApp._check_models          = _check_models
