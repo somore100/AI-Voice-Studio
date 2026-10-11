@@ -12,3 +12,8 @@ _archive/
 *.log
 main.py.pre_*
 main.py.bak
+_archive.zip
+tidy_repo.py
+dc_test.py
+jack_repro.py
+mic_level_test.py
