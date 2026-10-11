@@ -173,7 +173,11 @@ def open_editor(root, state, use_var, colors):
                   "Slider values combine with the curves.").pack(anchor="w")
     info = tk.Label(body, bg=colors["card"], fg=colors["fg"], font=("Segoe UI", 9, "bold"))
 
+    _ready = [False]
+
     def changed():
+        if _ready[0] and not use_var.get():
+            use_var.set(True)  # editing a curve = you want it applied
         k = audio_fx.length_factor(state)
         word = "shorter" if k < 0.995 else "longer" if k > 1.005 else "same length"
         info.config(text=f"Overall length: x{k:.2f} ({word})")
@@ -202,4 +206,5 @@ def open_editor(root, state, use_var, colors):
                   relief="flat", bd=0, padx=12, pady=4, cursor="hand2",
                   font=("Segoe UI", 9)).pack(side="left", padx=4)
     changed()
+    _ready[0] = True
     return win

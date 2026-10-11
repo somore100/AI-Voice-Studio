@@ -7,3 +7,8 @@ __pycache__/
 *.pyc
 venv/
 startup.log
+
+_archive/
+*.log
+main.py.pre_*
+main.py.bak
