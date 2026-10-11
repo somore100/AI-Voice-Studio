@@ -1,6 +1,24 @@
 import os
 import sys
 
+# ── AppImage: find the host's ALSA plugins (pipewire/pulse) ────────────────
+_ALSA_PLUGIN_MISSING = False
+if sys.platform.startswith("linux") and getattr(sys, "frozen", False) \
+        and not os.environ.get("ALSA_PLUGIN_DIR"):
+    _alsa_dirs = ["/usr/lib64/alsa-lib", "/usr/lib/x86_64-linux-gnu/alsa-lib",
+                  "/usr/lib/alsa-lib", "/usr/lib/aarch64-linux-gnu/alsa-lib"]
+    _alsa_hit = [d for d in _alsa_dirs
+                 if os.path.isfile(os.path.join(d, "libasound_module_pcm_pipewire.so"))
+                 or os.path.isfile(os.path.join(d, "libasound_module_pcm_pulse.so"))]
+    if _alsa_hit:
+        os.environ["ALSA_PLUGIN_DIR"] = _alsa_hit[0]
+    else:
+        _ALSA_PLUGIN_MISSING = True
+_MIC_NOTE = "Don't forget to choose the right microphone!"
+if _ALSA_PLUGIN_MISSING:
+    _MIC_NOTE += ("\nNo PipeWire/PulseAudio ALSA plugin found - if the mic doesn't "
+                  "work, install 'pipewire-alsa' (Fedora: sudo dnf install pipewire-alsa)")
+
 # ──────────────────────────────────────────────────────────────
 #  SSL CA-BUNDLE FIX (source runs fine, packaged builds don't)
 # ──────────────────────────────────────────────────────────────
@@ -704,6 +722,7 @@ class AIApp:
                 "Close anyway?")
             if not proceed:
                 return
+        self._vmic_destroy()
         self.root.destroy()
 
     def _request_mic_permission(self):
@@ -714,7 +733,7 @@ class AIApp:
         if ok:
             self._stt_note.config(text="Microphone access granted", fg=GREEN)
             self.root.after(3000, lambda: self._stt_note.winfo_exists() and self._stt_note.config(
-                text="Don't forget to choose the right microphone!", fg=YELLOW))
+                text=_MIC_NOTE, fg=YELLOW))
         else:
             self._stt_note.config(text="Microphone blocked - STT won't work", fg=RED)
             if show_mic_blocked_dialog(self.root, msg):
@@ -1084,6 +1103,21 @@ class AIApp:
         self._fx_track(self.tts_speed, "speed")
         self._fx_track(self.tts_pitch, "pitch")
 
+        # Speed / pitch curves (CapCut-style editor)
+        self._curves = {"on": False, "smooth": True,
+                        "speed": [(0.0, 1.0), (1.0, 1.0)],
+                        "pitch": [(0.0, 0.0), (1.0, 0.0)]}
+        self.tts_curves_on = tk.BooleanVar(value=False)
+        self.tts_curves_on.trace_add(
+            "write", lambda *_: self._curves.__setitem__(
+                "on", bool(self.tts_curves_on.get())))
+        cvr = tk.Frame(f, bg=CARD); cvr.pack(fill="x", padx=2, pady=4)
+        self._label(cvr, "Curves:").pack(side="left")
+        self._btn(cvr, "Edit speed / pitch curves...", self._open_curve_editor,
+                  color=SURFACE, padx=8).pack(side="left", padx=6)
+        ttk.Checkbutton(cvr, text="Use curves",
+                        variable=self.tts_curves_on).pack(side="left")
+
         fldr = tk.Frame(f, bg=CARD); fldr.pack(fill="x", padx=2, pady=4)
         self._label(fldr, "Save to:").pack(side="left")
         self.save_path_var = tk.StringVar(
@@ -1185,7 +1219,7 @@ class AIApp:
                         command=self.toggle_top).pack(side="right", padx=4)
 
         self._stt_note = self._label(
-            f, "Don't forget to choose the right microphone!",
+            f, _MIC_NOTE,
             fg=YELLOW, font=("Segoe UI",8))
         self._stt_note.pack(anchor="w", padx=2, pady=(2,2))
 
@@ -1617,10 +1651,60 @@ class AIApp:
         # Pipeline mode
         pl = tk.Frame(f, bg=CARD); pl.pack(fill="x", padx=2, pady=3)
         self._label(pl, "Mode:").pack(side="left")
-        self.vc_mode = tk.StringVar(value="Pitch only")
+        self.vc_mode = tk.StringVar(value="TTS pipeline (STT→TTS)")
         ttk.Combobox(pl, textvariable=self.vc_mode, state="readonly",
                      values=["Pitch only", "TTS pipeline (STT→TTS)"],
                      width=24, font=("Segoe UI",9)).pack(side="left", padx=6)
+
+        # Model choices
+        r1 = tk.Frame(f, bg=CARD); r1.pack(fill="x", padx=2, pady=3)
+        self._label(r1, "Hear with:").pack(side="left")
+        self.vc_stt_choice = tk.StringVar(value=_VC_SAME_STT)
+        ttk.Combobox(r1, textvariable=self.vc_stt_choice, state="readonly",
+                     values=[_VC_SAME_STT, "Whisper", "Vosk"], width=26,
+                     font=("Segoe UI",9)).pack(side="left", padx=6)
+        self._label(r1, "language: from the Speech-to-Text tab",
+                    fg=FG_DIM, font=("Segoe UI",8)).pack(side="left")
+
+        r2 = tk.Frame(f, bg=CARD); r2.pack(fill="x", padx=2, pady=3)
+        self._label(r2, "Speak with:").pack(side="left")
+        self.vc_tts_choice = tk.StringVar(value=_VC_SAME_TTS)
+        ttk.Combobox(r2, textvariable=self.vc_tts_choice, state="readonly",
+                     values=[_VC_SAME_TTS, "VCTK (English voices)",
+                             "XTTS-v2 (Multilingual)"], width=26,
+                     font=("Segoe UI",9)).pack(side="left", padx=6)
+        self._label(r2, "Voice:").pack(side="left")
+        self.vc_voice_var = tk.StringVar(value="")
+        self._vc_voice_map = {}
+        self._vc_voice_cb = ttk.Combobox(r2, textvariable=self.vc_voice_var,
+                                         state="disabled", values=[], width=22,
+                                         font=("Segoe UI",9))
+        self._vc_voice_cb.pack(side="left", padx=6)
+        self.vc_tts_choice.trace_add("write", lambda *_: self._vc_refresh_voices())
+
+        # Output routing
+        r3 = tk.Frame(f, bg=CARD); r3.pack(fill="x", padx=2, pady=3)
+        self.vc_vmic = tk.BooleanVar(value=_vmic_available())
+        _vm = ttk.Checkbutton(r3, text="Send to virtual microphone",
+                              variable=self.vc_vmic)
+        _vm.pack(side="left", padx=(0,12))
+        if not _vmic_available():
+            _vm.state(["disabled"])
+        self.vc_playback = tk.BooleanVar(value=True)
+        ttk.Checkbutton(r3, text="Playback (hear it yourself)",
+                        variable=self.vc_playback).pack(side="left")
+        if _vmic_available():
+            _hint = ("Call app: choose \"" + _VMIC_LABEL + "\" as the microphone "
+                     "(keep your real mic selected above). Use headphones with "
+                     "Playback on.")
+        elif sys.platform.startswith("linux"):
+            _hint = ("Virtual mic needs 'pactl' and 'paplay' (package "
+                     "pulseaudio-utils). Playback only until installed.")
+        else:
+            _hint = ("Virtual microphone is Linux-only for now. Playback "
+                     "plays on your speakers.")
+        self._label(f, _hint, fg=FG_DIM, font=("Segoe UI",8)).pack(
+            anchor="w", padx=4)
 
         # Status
         self._vc_status = self._label(f, "Stopped", fg=FG_DIM)
@@ -1645,8 +1729,29 @@ class AIApp:
             # will hit XTTS's CPML license requirement - resolve it here
             # on the main thread before the loop thread starts (same
             # reasoning as preview/save above).
-            if self._is_xtts() and not self._ensure_engine_tos("xtts"):
+            cfg, err = self._vc_resolve()
+            if err:
+                self._vc_report(err)
                 return
+            if cfg["vmic"]:
+                ok, msg = self._vmic_create()
+                if not ok:
+                    messagebox.showerror("Virtual microphone", msg)
+                    return
+            self._vc_cfg = cfg
+        else:
+            if not self._ensure_mic_access():
+                return
+            cfg, err = self._vc_resolve_live()
+            if err:
+                self._vc_report(err)
+                return
+            if cfg["vmic"]:
+                ok, msg = self._vmic_create()
+                if not ok:
+                    messagebox.showerror("Virtual microphone", msg)
+                    return
+            self._vc_cfg = cfg
         self._vc_running = True
         self._vc_status.config(text="Running...", fg=GREEN)
         threading.Thread(target=self._vc_loop, daemon=True).start()
@@ -1661,9 +1766,20 @@ class AIApp:
 
         if "TTS pipeline" in mode:
             # STT -> TTS pipeline
-            engine = self.stt_engine.get() if hasattr(self, 'stt_engine') else "Whisper (recommended)"
-            lang_disp = self.stt_lang_var.get() if hasattr(self, 'stt_lang_var') else "English"
+            cfg = self._vc_cfg
             mic_idx = self._resolve_mic_index()
+            _vosk = _vrec_cls = None
+            if cfg["stt"] == "vosk":
+                try:
+                    from vosk import KaldiRecognizer as _vrec_cls
+                    self.root.after(0, lambda: self._vc_status.config(
+                        text=f"Loading Vosk ({cfg['vlang']})...", fg=YELLOW))
+                    _vosk = get_vosk_model(cfg["vlang"])
+                except Exception as e:
+                    self._vc_running = False
+                    self.root.after(0, lambda err=str(e): self._vc_status.config(
+                        text=f"Error: {err[:60]}", fg=RED))
+                    return
 
             while self._vc_running:
                 try:
@@ -1677,12 +1793,17 @@ class AIApp:
                         text="Processing...", fg=YELLOW))
 
                     # STT
-                    raw = np.frombuffer(
-                        audio.get_raw_data(convert_rate=16000, convert_width=2),
-                        dtype=np.int16).astype(np.float32) / 32768.0
-                    model = get_whisper_model()
-                    result = model.transcribe(raw, fp16=False)
-                    text = result["text"].strip()
+                    pcm = audio.get_raw_data(convert_rate=16000, convert_width=2)
+                    if cfg["stt"] == "vosk":
+                        rec = _vrec_cls(_vosk, 16000)
+                        for _i in range(0, len(pcm), 8000):
+                            rec.AcceptWaveform(pcm[_i:_i + 8000])
+                        text = json.loads(rec.FinalResult()).get("text", "").strip()
+                    else:
+                        raw = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+                        kw = {"language": cfg["wlang"]} if cfg.get("wlang") else {}
+                        text = get_whisper_model().transcribe(
+                            raw, fp16=False, **kw)["text"].strip()
 
                     if text and self._vc_running:
                         print(f"[AVS] VC heard: \"{text}\"")
@@ -1692,33 +1813,28 @@ class AIApp:
                         import tempfile
                         tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
                         tmp.close()
-                        sid = self.get_selected_speaker_id() if not self._is_xtts() else None
-                        t0 = self._log_tts_job(text, sid, "VC speak")
-                        if sid:
-                            TTS_ENGINES["vctk"].synthesize(text, sid, tmp.name)
+                        t0 = time.time()
+                        print(f"[AVS] VC speak: stt={cfg['stt']} tts={cfg['tts']} "
+                              f"voice={cfg['voice']} chars={len(text)}")
+                        if cfg["tts"] == "vctk":
+                            TTS_ENGINES["vctk"].synthesize(text, cfg["voice"], tmp.name)
                         else:
-                            lang = LANG_XTTS.get(self.xtts_lang_var.get(), "en")
                             TTS_ENGINES["xtts"].synthesize(
-                                text, self._xtts_voice_arg(), tmp.name, lang)
+                                text, cfg["voice"], tmp.name, cfg["xtts_lang"])
                         self._apply_tts_fx(tmp.name, "vc_speed", "vc_pitch")
                         print(f"[AVS] VC speak ready in {time.time()-t0:.1f}s")
-                        pygame.mixer.music.load(tmp.name)
-                        pygame.mixer.music.play()
-                        while pygame.mixer.music.get_busy() and self._vc_running:
-                            time.sleep(0.1)
+                        self._vc_play(tmp.name, cfg)
+                        try:
+                            os.remove(tmp.name)
+                        except OSError:
+                            pass
                 except Exception as e:
                     if self._vc_running:
                         self.root.after(0, lambda err=str(e): self._vc_status.config(
                             text=f"Error: {err[:50]}", fg=RED))
                         time.sleep(1)
         else:
-            # Pitch only mode - shift pitch of mic input
-            self.root.after(0, lambda: self._vc_status.config(
-                text="Pitch mode: play audio to hear effect", fg=YELLOW))
-            time.sleep(1)
-            self.root.after(0, lambda: self._vc_status.config(
-                text="Tip: Use TTS pipeline mode for real-time voice changing", fg=FG_DIM))
-            self._vc_running = False
+            self._vc_live_loop()
 
     def _build_footer(self):
         f = tk.Frame(self._inner, bg=BG); f.pack(fill="x", padx=10, pady=(4,14))
@@ -2861,14 +2977,357 @@ def _apply_tts_fx(self, path, speed_key, pitch_key):
     pt = vals.get(pitch_key, 0.0)
     try:
         import audio_fx
-        if audio_fx.apply_fx(path, sp, pt):
-            print(f"[AVS] FX applied: speed={sp:.2f} pitch={pt:+.1f}st")
+        cv = None
+        if speed_key == "speed":
+            c = getattr(self, "_curves", None)
+            if c and c.get("on"):
+                cv = {"smooth": c["smooth"], "speed": list(c["speed"]),
+                      "pitch": list(c["pitch"])}
+        if audio_fx.apply_fx(path, sp, pt, curves=cv):
+            print(f"[AVS] FX applied: speed={sp:.2f} pitch={pt:+.1f}st "
+                  f"curves={'on' if cv else 'off'}")
     except Exception:
         print("[AVS] FX skipped (audio unchanged):")
         traceback.print_exc()
 
 
+import subprocess  # voice changer: virtual mic
+
+_VC_SAME_STT = "Same as Speech-to-Text tab"
+_VC_SAME_TTS = "Same as Text-to-Speech tab"
+_VMIC_SINK   = "avs_voice"
+_VMIC_SOURCE = "avs_voice_mic"
+_VMIC_LABEL  = "AI_Voice_Studio_Mic"
+
+
+def _ext_env():
+    """Environment for launching host tools (pactl/paplay) from a packaged
+    build: drop the bundled-library paths so they load the host's libraries."""
+    env = os.environ.copy()
+    if "LD_LIBRARY_PATH_ORIG" in env:
+        env["LD_LIBRARY_PATH"] = env["LD_LIBRARY_PATH_ORIG"]
+    bad = [p for p in (getattr(sys, "_MEIPASS", None), os.environ.get("APPDIR")) if p]
+    parts = [p for p in env.get("LD_LIBRARY_PATH", "").split(":")
+             if p and not any(p.startswith(b) for b in bad)]
+    if parts:
+        env["LD_LIBRARY_PATH"] = ":".join(parts)
+    else:
+        env.pop("LD_LIBRARY_PATH", None)
+    return env
+
+
+def _vmic_tools():
+    """(pactl, player) if a virtual mic can be used here, else None."""
+    if not sys.platform.startswith("linux"):
+        return None
+    pactl = shutil.which("pactl")
+    player = shutil.which("paplay") or shutil.which("pw-play")
+    return (pactl, player) if pactl and player else None
+
+
+def _vmic_available():
+    return _vmic_tools() is not None
+
+
+def _vmic_cmd(args, timeout=8):
+    return subprocess.run(args, capture_output=True, text=True,
+                          timeout=timeout, env=_ext_env())
+
+
+def _vmic_names(pactl, kind):
+    out = _vmic_cmd([pactl, "list", "short", kind]).stdout
+    return {ln.split("\t")[1] for ln in out.splitlines() if "\t" in ln}
+
+
+def _vmic_create(self):
+    """Create the virtual mic (a null sink plus a source that appears as a
+    real microphone). Returns (ok, message)."""
+    tools = _vmic_tools()
+    if not tools:
+        return False, ("The virtual microphone needs 'pactl' and 'paplay' "
+                       "(package pulseaudio-utils; Fedora: sudo dnf install "
+                       "pulseaudio-utils, Debian/Ubuntu: sudo apt install "
+                       "pulseaudio-utils).")
+    pactl = tools[0]
+    made = []
+    try:
+        if _VMIC_SINK not in _vmic_names(pactl, "sinks"):
+            r = _vmic_cmd([pactl, "load-module", "module-null-sink",
+                           f"sink_name={_VMIC_SINK}",
+                           f"sink_properties=device.description={_VMIC_LABEL}"])
+            if r.returncode != 0 or not r.stdout.strip().isdigit():
+                return False, ("Could not create the virtual sink: "
+                               + (r.stderr.strip() or r.stdout.strip() or "unknown error"))
+            made.append(r.stdout.strip())
+        if _VMIC_SOURCE not in _vmic_names(pactl, "sources"):
+            r = _vmic_cmd([pactl, "load-module", "module-remap-source",
+                           f"master={_VMIC_SINK}.monitor",
+                           f"source_name={_VMIC_SOURCE}",
+                           f"source_properties=device.description={_VMIC_LABEL}"])
+            if r.returncode != 0 or not r.stdout.strip().isdigit():
+                for mid in made:
+                    _vmic_cmd([pactl, "unload-module", mid])
+                return False, ("Could not create the virtual microphone: "
+                               + (r.stderr.strip() or r.stdout.strip() or "unknown error"))
+            made.append(r.stdout.strip())
+    except Exception as e:
+        return False, f"Virtual microphone setup failed: {e}"
+    self._vmic_modules = list(reversed(made)) + getattr(self, "_vmic_modules", [])
+    return True, "ready"
+
+
+def _vmic_destroy(self):
+    tools = _vmic_tools()
+    if not tools:
+        return
+    for mid in getattr(self, "_vmic_modules", []):
+        try:
+            _vmic_cmd([tools[0], "unload-module", mid])
+        except Exception:
+            pass
+    self._vmic_modules = []
+
+
+def _vmic_play(self, path):
+    player = _vmic_tools()[1]
+    if os.path.basename(player) == "pw-play":
+        cmd = [player, f"--target={_VMIC_SINK}", path]
+    else:
+        cmd = [player, f"--device={_VMIC_SINK}", path]
+    return subprocess.Popen(cmd, env=_ext_env(),
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def _vc_refresh_voices(self):
+    choice = self.vc_tts_choice.get()
+    self._vc_voice_map = {}
+    if choice.startswith("VCTK"):
+        for n in sorted(SPEAKER_MAP):
+            self._vc_voice_map[f"{n} ({SPEAKER_MAP[n][0]})"] = SPEAKER_MAP[n][0]
+        names = list(self._vc_voice_map)
+    elif choice.startswith("XTTS"):
+        from engines.coqui_xtts import PRESET_SPEAKERS
+        names = list(PRESET_SPEAKERS) + ["Cloned voice (from Text-to-Speech tab)"]
+    else:
+        names = []
+    self._vc_voice_cb.config(values=names, state="readonly" if names else "disabled")
+    self.vc_voice_var.set(names[0] if names else "")
+
+
+def _vc_resolve(self):
+    """Snapshot the Voice Changer's choices on the main thread.
+    Returns (cfg, None) or (None, (kind, payload)) for _vc_report()."""
+    stt = self.vc_stt_choice.get()
+    if stt == _VC_SAME_STT:
+        stt = self.stt_engine.get() if hasattr(self, "stt_engine") else "Whisper"
+    lang_disp = self.stt_lang_var.get() if hasattr(self, "stt_lang_var") else "English"
+    cfg = {"stt": "vosk" if stt.startswith("Vosk") else "whisper",
+           "wlang": LANG_WHISPER.get(lang_disp), "vlang": LANG_VOSK.get(lang_disp),
+           "playback": bool(self.vc_playback.get()),
+           "vmic": bool(self.vc_vmic.get()) and _vmic_available()}
+    if not cfg["playback"] and not cfg["vmic"]:
+        return None, ("msg", "Turn on Playback or Send to virtual microphone - "
+                             "otherwise the converted voice goes nowhere.")
+    if cfg["stt"] == "vosk":
+        if not VOSK_AVAILABLE:
+            return None, ("msg", "Vosk is not installed.")
+        if not cfg["vlang"] or not _vosk_model_ok(
+                os.path.join(VOSK_MODEL_DIR, cfg["vlang"])):
+            return None, ("vosk-missing", cfg["vlang"] or "?")
+    elif not WHISPER_AVAILABLE:
+        return None, ("msg", "Whisper is not installed.")
+
+    tts = self.vc_tts_choice.get()
+    if tts == _VC_SAME_TTS:
+        key = "xtts" if self._is_xtts() else "vctk"
+        if key == "vctk":
+            voice = self.get_selected_speaker_id()
+        else:
+            voice = self._xtts_voice_arg()
+    elif tts.startswith("VCTK"):
+        key = "vctk"
+        voice = self._vc_voice_map.get(self.vc_voice_var.get())
+    else:
+        key = "xtts"
+        v = self.vc_voice_var.get()
+        if v.startswith("Cloned"):
+            if not getattr(self, "xtts_clone_path", None):
+                return None, ("msg", "No cloned voice is set. Pick a clip with "
+                                     "'Clone Voice from File...' in the "
+                                     "Text-to-Speech tab, or choose a preset.")
+            voice = self._xtts_voice_arg()
+        else:
+            voice = v
+    if not voice:
+        return None, ("msg", "Pick a voice (here, or in the Text-to-Speech tab).")
+    cfg["tts"], cfg["voice"] = key, voice
+    lang = LANG_XTTS.get(self.xtts_lang_var.get(), "en") if hasattr(self, "xtts_lang_var") else "en"
+    cfg["xtts_lang"] = lang if lang in XTTS_SUPPORTED else "en"
+    try:
+        if not TTS_ENGINES[key].is_installed():
+            return None, ("tts-missing", TTS_ENGINES[key].display_name)
+    except Exception:
+        pass
+    if key == "xtts" and not self._ensure_engine_tos("xtts"):
+        return None, ("cancel", "")
+    return cfg, None
+
+
+def _vc_report(self, err):
+    kind, payload = err
+    if kind == "vosk-missing":
+        self._vosk_missing_prompt(payload, f"No Vosk model for '{payload}'.")
+    elif kind == "tts-missing":
+        messagebox.showerror("Voice Changer",
+                             f"{payload} isn't installed. Download it first in "
+                             f"Models & Setup.")
+    elif kind == "msg":
+        messagebox.showerror("Voice Changer", payload)
+
+
+def _vc_play(self, path, cfg):
+    procs = []
+    if cfg["vmic"]:
+        try:
+            procs.append(self._vmic_play(path))
+        except Exception as e:
+            print(f"[AVS] virtual mic playback failed: {e}")
+    if cfg["playback"]:
+        pygame.mixer.music.load(path)
+        pygame.mixer.music.play()
+    try:
+        while self._vc_running:
+            busy = any(p.poll() is None for p in procs) or (
+                cfg["playback"] and pygame.mixer.music.get_busy())
+            if not busy:
+                break
+            time.sleep(0.05)
+    finally:
+        for p in procs:
+            if p.poll() is None:
+                p.terminate()
+        if cfg["playback"]:
+            pygame.mixer.music.stop()
+            try:
+                pygame.mixer.music.unload()
+            except Exception:
+                pass
+
+
+def _vc_resolve_live(self):
+    """Checks for the live pitch mode (main thread). (cfg, None) or (None, err)."""
+    cfg = {"playback": bool(self.vc_playback.get()),
+           "vmic": bool(self.vc_vmic.get()) and _vmic_available()}
+    if not sys.platform.startswith("linux") or not shutil.which("pacat"):
+        return None, ("msg", "Live Pitch only mode needs Linux with PulseAudio/"
+                             "PipeWire and the 'pacat' tool (package "
+                             "pulseaudio-utils). Use the STT->TTS mode instead.")
+    if not cfg["playback"] and not cfg["vmic"]:
+        return None, ("msg", "Turn on Playback or Send to virtual microphone - "
+                             "otherwise the converted voice goes nowhere.")
+    try:
+        import live_pitch  # noqa: F401
+    except Exception as e:
+        return None, ("msg", f"live_pitch.py could not be loaded: {e}")
+    if cfg["playback"] and not getattr(self, "_vc_live_ok", False):
+        if not messagebox.askyesno(
+                "Playback needs headphones",
+                "Live Playback sends your changed voice to your speakers. "
+                "Without headphones the microphone hears it again and you "
+                "get a loud feedback howl.\n\nContinue with Playback on?"):
+            return None, ("cancel", "")
+        self._vc_live_ok = True
+    return cfg, None
+
+
+def _vc_live_loop(self):
+    import numpy as np
+    from live_pitch import PitchShifter
+    cfg = self._vc_cfg
+    pacat = shutil.which("pacat")
+    outs = []
+
+    def _open_out(rate, device):
+        cmd = [pacat, "--playback", f"--rate={rate}", "--channels=1",
+               "--format=s16le", "--latency-msec=40",
+               "--client-name=AI Voice Studio", "--stream-name=Voice Changer"]
+        if device:
+            cmd.append(f"--device={device}")
+        p = subprocess.Popen(cmd, stdin=subprocess.PIPE, env=_ext_env(),
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            import fcntl
+            fcntl.fcntl(p.stdin.fileno(), 1031, 4096)   # F_SETPIPE_SZ: small pipe
+        except Exception:                               # keeps the delay bounded
+            pass
+        return p
+
+    try:
+        with self._open_mic(self._resolve_mic_index()) as source:
+            rate = int(source.SAMPLE_RATE)
+            chunk = source.CHUNK
+            shifter = PitchShifter(rate)
+            if cfg["vmic"]:
+                outs.append(_open_out(rate, _VMIC_SINK))
+            if cfg["playback"]:
+                outs.append(_open_out(rate, None))
+            print(f"[AVS] live pitch: rate={rate} chunk={chunk} vmic={cfg['vmic']} "
+                  f"playback={cfg['playback']} latency~{shifter.latency_samples / rate * 1000:.0f}ms",
+                  flush=True)
+            shown = None
+            while self._vc_running:
+                data = source.stream.read(chunk)
+                x = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32768.0
+                semis = float(getattr(self, "_fx_vals", {}).get("vc_pitch", 0.0))
+                y = shifter.process(x, 2.0 ** (semis / 12.0))
+                a = np.abs(y)                          # soft limiter above 0.8
+                y = np.where(a > 0.8, np.sign(y) * (0.8 + 0.2 * np.tanh((a - 0.8) / 0.2)), y)
+                pcm = (y * 32767.0).astype(np.int16).tobytes()
+                for p in outs:
+                    if p.poll() is not None:
+                        raise RuntimeError("Audio output stopped (pacat exited)")
+                    p.stdin.write(pcm)
+                    p.stdin.flush()
+                if shown is None or abs(semis - shown) >= 0.1:
+                    shown = semis
+                    self.root.after(0, lambda s=semis: self._vc_status.config(
+                        text=f"Live pitch: {s:+.1f} semitones", fg=GREEN))
+    except Exception as e:
+        print(f"[AVS] live pitch error: {e!r}", flush=True)
+        if self._vc_running:
+            self.root.after(0, lambda err=str(e): self._vc_status.config(
+                text=f"Error: {err[:60]}", fg=RED))
+    finally:
+        for p in outs:
+            try:
+                p.stdin.close()
+            except Exception:
+                pass
+            try:
+                p.terminate()
+            except Exception:
+                pass
+        self._vc_running = False
+
+
+def _open_curve_editor(self):
+    from curve_editor import open_editor
+    colors = {"bg": BG, "card": CARD, "fg": FG, "dim": FG_DIM,
+              "border": BORDER, "accent": CYAN, "surface": SURFACE}
+    open_editor(self.root, self._curves, self.tts_curves_on, colors)
+
+
 # Patch these methods onto AIApp
+AIApp._open_curve_editor = _open_curve_editor
+AIApp._vc_resolve_live = _vc_resolve_live
+AIApp._vc_live_loop = _vc_live_loop
+AIApp._vmic_create = _vmic_create
+AIApp._vmic_destroy = _vmic_destroy
+AIApp._vmic_play = _vmic_play
+AIApp._vc_refresh_voices = _vc_refresh_voices
+AIApp._vc_resolve = _vc_resolve
+AIApp._vc_report = _vc_report
+AIApp._vc_play = _vc_play
 AIApp._fx_track = _fx_track
 AIApp._apply_tts_fx = _apply_tts_fx
 AIApp._uninstall_model = _uninstall_model
