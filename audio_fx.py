@@ -5,11 +5,14 @@ Works on any engine's WAV output, in place. Needs librosa + soundfile (both
 already installed as coqui-tts dependencies); scipy is used for smooth
 curves when available.
 
-apply_fx(path, speed, pitch)                    constant speed / pitch
+apply_fx(path, speed, pitch, volume=1.0)        constant speed / pitch / volume
 apply_fx(path, speed, pitch, curves=state)      state from the curve editor:
-    {"smooth": bool, "speed": [(x, mult), ...], "pitch": [(x, semitones), ...]}
-    x is the position in the ORIGINAL speech, 0..1. The slider values and the
-    curves combine (speeds multiply, semitones add).
+    {"smooth": bool, "speed": [(x, mult), ...], "pitch": [(x, semitones), ...],
+     "volume": [(x, gain), ...]}
+    x is the position in the ORIGINAL speech, 0..1. The app uses EITHER the
+    sliders OR the curves (it passes neutral slider values when curves are
+    on); if both are given anyway they combine (speeds multiply, semitones
+    add, gains multiply).
 """
 import os
 import tempfile
@@ -18,6 +21,7 @@ import numpy as np
 
 SPEED_MIN, SPEED_MAX = 0.5, 2.0
 PITCH_MIN, PITCH_MAX = -12.0, 12.0
+VOL_MIN, VOL_MAX = 0.0, 2.0
 
 
 def curve_func(points, smooth=True, lo=None, hi=None):
@@ -113,15 +117,30 @@ def _apply_curves(y, sr, speed, pitch, curves):
     return np.interp(m_n, np.arange(len(y1)), y1).astype(np.float32)
 
 
-def apply_fx(path, speed=1.0, pitch=0.0, curves=None):
+def _soft_limit(y, knee=0.9):
+    """Keep boosted audio from clipping without undoing the boost."""
+    a = np.abs(y)
+    over = a > knee
+    if np.any(over):
+        w = 1.0 - knee
+        y = y.copy()
+        y[over] = np.sign(y[over]) * (knee + w * np.tanh((a[over] - knee) / w))
+    return y
+
+
+def apply_fx(path, speed=1.0, pitch=0.0, curves=None, volume=1.0):
     """Rewrite the WAV at `path`. Returns True if the file was modified."""
     speed = float(speed)
     pitch = float(pitch)
-    use_curves = bool(curves) and not (
+    volume = float(volume)
+    vol_pts = (curves or {}).get("volume")
+    vol_curve = bool(vol_pts) and not _is_flat(vol_pts, 1.0)
+    tp_curves = bool(curves) and not (
         _is_flat(curves["speed"], 1.0) and _is_flat(curves["pitch"], 0.0))
     do_speed = abs(speed - 1.0) >= 0.01
     do_pitch = abs(pitch) >= 0.05
-    if not (use_curves or do_speed or do_pitch):
+    do_vol = abs(volume - 1.0) >= 0.01
+    if not (tp_curves or vol_curve or do_speed or do_pitch or do_vol):
         return False
 
     import librosa
@@ -130,7 +149,12 @@ def apply_fx(path, speed=1.0, pitch=0.0, curves=None):
     y, sr = librosa.load(path, sr=None, mono=True)
     if y.size == 0:
         return False
-    if use_curves:
+    if vol_curve:                        # gain follows the ORIGINAL speech
+        vf = curve_func(vol_pts, curves.get("smooth", True), VOL_MIN, VOL_MAX)
+        y = (y * vf(np.linspace(0.0, 1.0, y.size))).astype(np.float32)
+    if do_vol:
+        y = (y * np.float32(volume)).astype(np.float32)
+    if tp_curves:
         y = _apply_curves(y, sr, speed, pitch, curves)
     else:
         if do_pitch:
@@ -139,7 +163,9 @@ def apply_fx(path, speed=1.0, pitch=0.0, curves=None):
             y = librosa.effects.time_stretch(y, rate=speed)
 
     peak = float(np.max(np.abs(y))) if y.size else 0.0
-    if peak > 0.99:                      # avoid clipping after processing
+    if vol_curve or do_vol:              # boosted: limit, don't rescale
+        y = np.clip(_soft_limit(y), -1.0, 1.0)
+    elif peak > 0.99:                    # avoid clipping after processing
         y = y * (0.98 / peak)
 
     fd, tmp = tempfile.mkstemp(suffix=".wav", dir=os.path.dirname(path) or ".")

@@ -1091,8 +1091,9 @@ class AIApp:
         pch = tk.Frame(f, bg=CARD); pch.pack(fill="x", padx=2, pady=4)
         self._label(pch, "Pitch:").pack(side="left")
         self.tts_pitch = tk.DoubleVar(value=0.0)
-        ttk.Scale(pch, from_=-12.0, to=12.0, orient="horizontal",
-                  variable=self.tts_pitch, length=200).pack(side="left", padx=6)
+        pitch_slider = ttk.Scale(pch, from_=-12.0, to=12.0, orient="horizontal",
+                                 variable=self.tts_pitch, length=200)
+        pitch_slider.pack(side="left", padx=6)
         self._pitch_label = tk.Label(pch, text="+0.0", bg=CARD, fg=CYAN,
                                      font=("Segoe UI",9,"bold"), width=5)
         self._pitch_label.pack(side="left")
@@ -1100,23 +1101,50 @@ class AIApp:
             text=f"{self.tts_pitch.get():+.1f}"))
         self._btn(pch, "Reset", lambda: self.tts_pitch.set(0.0),
                   color=SURFACE, padx=6).pack(side="left", padx=4)
+
+        # Volume slider (post-process gain, 0-200 %)
+        vol = tk.Frame(f, bg=CARD); vol.pack(fill="x", padx=2, pady=4)
+        self._label(vol, "Volume:").pack(side="left")
+        self.tts_volume = tk.DoubleVar(value=1.0)
+        vol_slider = ttk.Scale(vol, from_=0.0, to=2.0, orient="horizontal",
+                               variable=self.tts_volume, length=200)
+        vol_slider.pack(side="left", padx=6)
+        self._volume_label = tk.Label(vol, text="100%", bg=CARD, fg=CYAN,
+                                      font=("Segoe UI",9,"bold"), width=5)
+        self._volume_label.pack(side="left")
+        self.tts_volume.trace_add("write", lambda *_: self._volume_label.config(
+            text=f"{self.tts_volume.get()*100:.0f}%"))
+        self._btn(vol, "Reset", lambda: self.tts_volume.set(1.0),
+                  color=SURFACE, padx=6).pack(side="left", padx=4)
         self._fx_track(self.tts_speed, "speed")
         self._fx_track(self.tts_pitch, "pitch")
+        self._fx_track(self.tts_volume, "volume")
 
-        # Speed / pitch curves (CapCut-style editor)
+        # Speed / pitch / volume curves (CapCut-style editor)
         self._curves = {"on": False, "smooth": True,
                         "speed": [(0.0, 1.0), (1.0, 1.0)],
-                        "pitch": [(0.0, 0.0), (1.0, 0.0)]}
+                        "pitch": [(0.0, 0.0), (1.0, 0.0)],
+                        "volume": [(0.0, 1.0), (1.0, 1.0)]}
         self.tts_curves_on = tk.BooleanVar(value=False)
         self.tts_curves_on.trace_add(
             "write", lambda *_: self._curves.__setitem__(
                 "on", bool(self.tts_curves_on.get())))
         cvr = tk.Frame(f, bg=CARD); cvr.pack(fill="x", padx=2, pady=4)
-        self._label(cvr, "Curves:").pack(side="left")
-        self._btn(cvr, "Edit speed / pitch curves...", self._open_curve_editor,
-                  color=SURFACE, padx=8).pack(side="left", padx=6)
-        ttk.Checkbutton(cvr, text="Use curves",
-                        variable=self.tts_curves_on).pack(side="left")
+        self._label(cvr, "Mode:").pack(side="left")
+        ttk.Radiobutton(cvr, text="Sliders", variable=self.tts_curves_on,
+                        value=False).pack(side="left", padx=(6, 2))
+        ttk.Radiobutton(cvr, text="Curves", variable=self.tts_curves_on,
+                        value=True).pack(side="left", padx=(2, 8))
+        self._btn(cvr, "Edit curves...", self._open_curve_editor,
+                  color=SURFACE, padx=8).pack(side="left", padx=4)
+
+        def _sync_fx_mode(*_):
+            # sliders and curves are either/or: grey the sliders out in Curves mode
+            st = ["disabled"] if self.tts_curves_on.get() else ["!disabled"]
+            for w in (speed_slider, pitch_slider, vol_slider):
+                w.state(st)
+        self.tts_curves_on.trace_add("write", _sync_fx_mode)
+        _sync_fx_mode()
 
         fldr = tk.Frame(f, bg=CARD); fldr.pack(fill="x", padx=2, pady=4)
         self._label(fldr, "Save to:").pack(side="left")
@@ -1966,11 +1994,13 @@ class AIApp:
                 TTS_ENGINES["xtts"].synthesize(text, self._xtts_voice_arg(), tmp.name, lang)
             else:
                 TTS_ENGINES["vctk"].synthesize(text, sid, tmp.name)
-            self._apply_tts_fx(tmp.name, "speed", "pitch")
+            fx = self._apply_tts_fx(tmp.name, "speed", "pitch", "volume")
             print(f"[AVS] Preview ready in {time.time()-t0:.1f}s -> {tmp.name}")
             pygame.mixer.music.load(tmp.name); pygame.mixer.music.play()
             self.root.after(0, self._stop_loading)
-            self.root.after(0, lambda: self._set_tts_status("Playing preview...", GREEN))
+            _col = YELLOW if "FAILED" in fx else GREEN
+            self.root.after(0, lambda: self._set_tts_status(
+                f"Playing preview - {fx}", _col))
         except Exception as e:
             print(f"[AVS] Preview failed: {e}")
             traceback.print_exc()
@@ -2010,11 +2040,12 @@ class AIApp:
                 TTS_ENGINES["xtts"].synthesize(text, self._xtts_voice_arg(), out, lang)
             else:
                 TTS_ENGINES["vctk"].synthesize(text, sid, out)
-            self._apply_tts_fx(out, "speed", "pitch")
+            fx = self._apply_tts_fx(out, "speed", "pitch", "volume")
             print(f"[AVS] Saved in {time.time()-t0:.1f}s -> {out}")
             self.root.after(0, self._stop_loading)
-            self.root.after(0, lambda: messagebox.showinfo("Saved!", f"Audio saved to:\n{out}"))
-            self.root.after(0, lambda: self._set_tts_status("Saved!", GREEN))
+            self.root.after(0, lambda: messagebox.showinfo("Saved!", f"Audio saved to:\n{out}\n\nEffects: {fx}"))
+            _col = YELLOW if "FAILED" in fx else GREEN
+            self.root.after(0, lambda: self._set_tts_status(f"Saved! - {fx}", _col))
         except Exception as e:
             print(f"[AVS] Save failed: {e}")
             traceback.print_exc()
@@ -2961,7 +2992,8 @@ def _fx_track(self, var, key):
     it safely (calling .get() on a Tk variable off the main thread isn't)."""
     vals = self.__dict__.setdefault(
         "_fx_vals",
-        {"speed": 1.0, "pitch": 0.0, "vc_speed": 1.0, "vc_pitch": 0.0})
+        {"speed": 1.0, "pitch": 0.0, "volume": 1.0,
+         "vc_speed": 1.0, "vc_pitch": 0.0})
     def _upd(*_):
         try:
             vals[key] = float(var.get())
@@ -2971,24 +3003,36 @@ def _fx_track(self, var, key):
     _upd()
 
 
-def _apply_tts_fx(self, path, speed_key, pitch_key):
+def _apply_tts_fx(self, path, speed_key, pitch_key, volume_key=None):
+    """Apply speed/pitch/volume to the WAV at `path`. Sliders and curves are
+    either/or: in Curves mode the slider values are ignored. Returns a short
+    human-readable summary for the status line."""
     vals = getattr(self, "_fx_vals", {})
     sp = vals.get(speed_key, 1.0)
     pt = vals.get(pitch_key, 0.0)
+    vol = vals.get(volume_key, 1.0) if volume_key else 1.0
     try:
         import audio_fx
         cv = None
-        if speed_key == "speed":
-            c = getattr(self, "_curves", None)
-            if c and c.get("on"):
-                cv = {"smooth": c["smooth"], "speed": list(c["speed"]),
-                      "pitch": list(c["pitch"])}
-        if audio_fx.apply_fx(path, sp, pt, curves=cv):
-            print(f"[AVS] FX applied: speed={sp:.2f} pitch={pt:+.1f}st "
-                  f"curves={'on' if cv else 'off'}")
+        c = getattr(self, "_curves", None) if speed_key == "speed" else None
+        if c and c.get("on"):
+            cv = {"smooth": c["smooth"], "speed": list(c["speed"]),
+                  "pitch": list(c["pitch"]), "volume": list(c["volume"])}
+            sp, pt, vol = 1.0, 0.0, 1.0      # curves replace the sliders
+        changed = audio_fx.apply_fx(path, sp, pt, curves=cv, volume=vol)
+        if cv:
+            text = ("curves applied" if changed
+                    else "curves ON but all flat - audio unchanged")
+        elif changed:
+            text = f"sliders: speed {sp:.2f}x, pitch {pt:+.1f} st, volume {vol*100:.0f}%"
+        else:
+            text = "no effects (sliders at default)"
+        print(f"[AVS] FX: {text}")
+        return text
     except Exception:
         print("[AVS] FX skipped (audio unchanged):")
         traceback.print_exc()
+        return "effects FAILED - audio unchanged (see terminal)"
 
 
 import subprocess  # voice changer: virtual mic

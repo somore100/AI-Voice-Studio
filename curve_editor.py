@@ -1,11 +1,12 @@
-"""Speed & pitch curve editor (tkinter), CapCut-style.
+"""Speed, pitch & volume curve editor (tkinter), CapCut-style.
 
-Two canvases over the speech timeline (left = start, right = end of the
+Three canvases over the speech timeline (left = start, right = end of the
 original speech). Click empty space to add a point, drag to move, right-click
 or double-click a point to remove it. End points only move up/down. Points
 snap to the centre line (1x / 0 st) when you get close.
 The curves are stored in `state` (a plain dict shared with the app):
-    {"smooth": bool, "speed": [(x, mult)], "pitch": [(x, semitones)]}
+    {"smooth": bool, "speed": [(x, mult)], "pitch": [(x, semitones)],
+     "volume": [(x, gain)]}
 """
 import math
 import tkinter as tk
@@ -13,7 +14,7 @@ from tkinter import ttk
 
 import audio_fx
 
-W, H = 640, 190
+W, H = 640, 130
 L, R, T, B = 54, 14, 12, 24
 PLOT_W, PLOT_H = W - L - R, H - T - B
 
@@ -46,6 +47,8 @@ class _Panel:
     def v2py(self, v):
         if self.kind == "speed":
             yn = 0.5 - 0.5 * math.log2(min(max(v, 0.5), 2.0))
+        elif self.kind == "volume":
+            yn = 1.0 - min(max(v, 0.0), 2.0) / 2.0
         else:
             yn = 0.5 - min(max(v, -12.0), 12.0) / 24.0
         return T + yn * PLOT_H
@@ -54,17 +57,24 @@ class _Panel:
         yn = min(max((py - T) / PLOT_H, 0.0), 1.0)
         if abs(yn - 0.5) * PLOT_H < 7:             # snap to the centre line
             yn = 0.5
-        return 2.0 ** (1.0 - 2.0 * yn) if self.kind == "speed" else 12.0 - 24.0 * yn
+        if self.kind == "speed":
+            return 2.0 ** (1.0 - 2.0 * yn)
+        if self.kind == "volume":
+            return 2.0 - 2.0 * yn
+        return 12.0 - 24.0 * yn
 
     def fmt(self, v):
-        return f"{v:.2f}x" if self.kind == "speed" else f"{v:+.1f} st"
+        if self.kind == "speed":
+            return f"{v:.2f}x"
+        return f"{v * 100:.0f}%" if self.kind == "volume" else f"{v:+.1f} st"
 
     # ---- drawing
     def draw(self):
         cv, c = self.cv, self.c
         cv.delete("all")
-        labels = (["2.0x", "1.4x", "1.0x", "0.7x", "0.5x"] if self.kind == "speed"
-                  else ["+12", "+6", "0", "-6", "-12"])
+        labels = {"speed": ["2.0x", "1.4x", "1.0x", "0.7x", "0.5x"],
+                  "volume": ["200%", "150%", "100%", "50%", "0%"],
+                  }.get(self.kind, ["+12", "+6", "0", "-6", "-12"])
         for i, lab in enumerate(labels):
             y = T + i * PLOT_H / 4
             cv.create_line(L, y, L + PLOT_W, y, fill=c["border"] if i != 2 else c["dim"],
@@ -75,7 +85,7 @@ class _Panel:
             cv.create_line(x, T, x, T + PLOT_H, fill=c["border"], dash=(2, 3))
             cv.create_text(x, T + PLOT_H + 11, text=lab, fill=c["dim"], font=("Segoe UI", 8))
         pts = self.state[self.key]
-        lo, hi = (0.5, 2.0) if self.kind == "speed" else (-12.0, 12.0)
+        lo, hi = {"speed": (0.5, 2.0), "volume": (0.0, 2.0)}.get(self.kind, (-12.0, 12.0))
         f = audio_fx.curve_func(pts, self.state.get("smooth", True), lo, hi)
         xs = [i / 240.0 for i in range(241)]
         line = []
@@ -146,8 +156,8 @@ class _Panel:
         self.cv.configure(cursor="hand2" if i is not None else "crosshair")
 
     def reset(self):
-        self.state[self.key][:] = [(0.0, 1.0 if self.kind == "speed" else 0.0),
-                                   (1.0, 1.0 if self.kind == "speed" else 0.0)]
+        d = 0.0 if self.kind == "pitch" else 1.0
+        self.state[self.key][:] = [(0.0, d), (1.0, d)]
         self.sel = None
         self.draw()
         self.on_change()
@@ -162,7 +172,7 @@ def open_editor(root, state, use_var, colors):
         return win
     win = tk.Toplevel(root)
     root._curve_win = win
-    win.title("Speed & Pitch Curves")
+    win.title("Speed, Pitch & Volume Curves")
     win.configure(bg=colors["card"])
     win.resizable(False, False)
     body = tk.Frame(win, bg=colors["card"], padx=12, pady=10)
@@ -170,7 +180,7 @@ def open_editor(root, state, use_var, colors):
     tk.Label(body, bg=colors["card"], fg=colors["dim"], font=("Segoe UI", 9), justify="left",
              text="Click to add a point  -  drag to move  -  right-click or double-click a "
                   "point to remove it.\nThe curves follow your speech from start to end. "
-                  "Slider values combine with the curves.").pack(anchor="w")
+                  "Curves REPLACE the sliders - use one or the other.").pack(anchor="w")
     info = tk.Label(body, bg=colors["card"], fg=colors["fg"], font=("Segoe UI", 9, "bold"))
 
     _ready = [False]
@@ -184,6 +194,7 @@ def open_editor(root, state, use_var, colors):
 
     sp = _Panel(body, "Speed   (up = faster)", state, "speed", colors, changed)
     pp = _Panel(body, "Pitch   (up = higher)", state, "pitch", colors, changed)
+    vp = _Panel(body, "Volume   (up = louder)", state, "volume", colors, changed)
     row = tk.Frame(body, bg=colors["card"])
     row.pack(fill="x", pady=(10, 0))
     smooth = tk.BooleanVar(value=state.get("smooth", True))
@@ -192,16 +203,19 @@ def open_editor(root, state, use_var, colors):
         state["smooth"] = bool(smooth.get())
         sp.draw()
         pp.draw()
+        vp.draw()
         changed()
     smooth.trace_add("write", set_smooth)
     ttk.Checkbutton(row, text="Smooth curves", variable=smooth).pack(side="left", padx=(0, 14))
-    ttk.Checkbutton(row, text="Use curves on Preview / Save audio",
-                    variable=use_var).pack(side="left")
+    ttk.Radiobutton(row, text="Use sliders", variable=use_var,
+                    value=False).pack(side="left", padx=(0, 8))
+    ttk.Radiobutton(row, text="Use curves", variable=use_var,
+                    value=True).pack(side="left")
     info.pack(anchor="w", pady=(6, 0))
     btns = tk.Frame(body, bg=colors["card"])
     btns.pack(anchor="e", pady=(8, 0))
     for text, cmd in (("Reset speed", sp.reset), ("Reset pitch", pp.reset),
-                      ("Close", win.destroy)):
+                      ("Reset volume", vp.reset), ("Close", win.destroy)):
         tk.Button(btns, text=text, command=cmd, bg=colors["surface"], fg=colors["fg"],
                   relief="flat", bd=0, padx=12, pady=4, cursor="hand2",
                   font=("Segoe UI", 9)).pack(side="left", padx=4)
