@@ -117,6 +117,95 @@ def _apply_curves(y, sr, speed, pitch, curves):
     return np.interp(m_n, np.arange(len(y1)), y1).astype(np.float32)
 
 
+# ── timeline helpers (used by the curve editor and the TTS tab) ──────────
+
+def load_wav_mono(path):
+    """(float32 mono samples, sample rate)"""
+    import soundfile as sf
+    y, sr = sf.read(path, dtype="float32", always_2d=True)
+    return y.mean(axis=1).astype(np.float32), int(sr)
+
+
+def write_wav(path, y, sr):
+    import soundfile as sf
+    sf.write(path, np.clip(y, -1.0, 1.0), int(sr), subtype="PCM_16")
+
+
+def split_sentences(text, limit=260):
+    """Split text into sentence units (one synthesis call each). Splits at
+    . ! ? and line breaks; an over-long sentence is cut at a comma/space."""
+    import re
+    units = []
+    for para in re.split(r"\n+", text or ""):
+        for s in re.split(r"(?<=[.!?\u3002\uff01\uff1f])\s+", para.strip()):
+            s = s.strip()
+            while len(s) > limit:
+                cut = max(s.rfind(", ", 0, limit), s.rfind("; ", 0, limit),
+                          s.rfind(" ", 0, limit))
+                cut = cut if cut > 40 else limit
+                units.append(s[:cut + 1].strip())
+                s = s[cut + 1:].strip()
+            if s and re.search(r"\w", s):
+                units.append(s)
+    return units
+
+
+def stitch(parts, sr, gap_s=0.18):
+    """Join audio pieces with a short silence. Returns (audio, [(t0, t1)])
+    where (t0, t1) is each piece's span in seconds."""
+    gap = np.zeros(int(sr * gap_s), dtype=np.float32)
+    out, spans, pos = [], [], 0
+    for i, y in enumerate(parts):
+        y = np.asarray(y, dtype=np.float32)
+        spans.append((pos / sr, (pos + y.size) / sr))
+        out.append(y)
+        pos += y.size
+        if i < len(parts) - 1:
+            out.append(gap)
+            pos += gap.size
+    return (np.concatenate(out) if out else np.zeros(0, np.float32)), spans
+
+
+def find_pauses(y, sr, min_gap=0.10, rel_thresh=0.04):
+    """Centres (seconds) of quiet gaps between words/sentences - safe places
+    to put an edit without cutting a word."""
+    hop = max(1, int(sr * 0.01))
+    n = y.size // hop
+    if n < 3:
+        return []
+    rms = np.sqrt((y[:n * hop].reshape(n, hop) ** 2).mean(axis=1))
+    quiet = rms < max(float(rms.max()) * rel_thresh, 1e-4)
+    out, i = [], 0
+    need = int(round(min_gap / 0.01))
+    while i < n:
+        if quiet[i]:
+            j = i
+            while j < n and quiet[j]:
+                j += 1
+            if j - i >= need and i > 3 and j < n - 3:     # skip the edges
+                out.append(((i + j) / 2.0) * 0.01)
+            i = j
+        else:
+            i += 1
+    return out
+
+
+def wave_peaks(y, i0, i1, ncols):
+    """(min, max) per pixel column for samples [i0, i1)."""
+    i0, i1 = max(0, int(i0)), min(y.size, int(i1))
+    if i1 - i0 < 2 or ncols < 1:
+        z = np.zeros(max(ncols, 1), dtype=np.float32)
+        return z, z
+    if i1 - i0 <= ncols:
+        idx = (i0 + (np.arange(ncols) * (i1 - i0)) // ncols).astype(int)
+        v = y[np.minimum(idx, y.size - 1)]
+        return v, v
+    idx = (i0 + (np.arange(ncols) * (i1 - i0)) // ncols).astype(int)
+    seg = y[i0:i1]
+    rel = idx - i0
+    return np.minimum.reduceat(seg, rel), np.maximum.reduceat(seg, rel)
+
+
 def _soft_limit(y, knee=0.9):
     """Keep boosted audio from clipping without undoing the boost."""
     a = np.abs(y)

@@ -2002,6 +2002,141 @@ class AIApp:
     def _stop_loading(self): self._progressbar_w.stop(); self._progressbar_w["value"]=0; self._prog_label.config(text="")
     def _is_xtts(self): return self.tts_engine.get().startswith("XTTS")
 
+    # ---- one synthesis call, any engine ---------------------------------
+    def _tts_snapshot(self, sid):
+        """(engine, voice, language) for the current TTS-tab settings."""
+        key = self._engine_key()
+        if key == "xtts":
+            lang = LANG_XTTS[self.xtts_lang_var.get()]
+            return ("xtts", self._xtts_voice_arg(), lang if lang in XTTS_SUPPORTED else "en")
+        if key == "kokoro":
+            return ("kokoro", sid, None)
+        return ("vctk", sid, None)
+
+    def _tts_synth(self, snap, text, out):
+        key, voice, lang = snap
+        if key == "xtts":
+            TTS_ENGINES["xtts"].synthesize(text, voice, out, lang)
+        else:
+            TTS_ENGINES[key].synthesize(text, voice, out)
+
+    # ---- timeline reference (curve editor) ------------------------------
+    def _get_timed_ref(self, text, snap, progress=None):
+        """Synthesize `text` one sentence at a time and stitch the pieces,
+        so every sentence's position in the audio is known exactly. The
+        result is cached: the curves are drawn against THIS audio, and
+        Preview/Save reuse it (re-synthesizing would give slightly different
+        timing and the curves would land in the wrong places)."""
+        import audio_fx
+        key = (snap, text)
+        ref = getattr(self, "_tl_ref", None)
+        if ref and ref["key"] == key and os.path.exists(ref["path"]):
+            return ref
+        units = audio_fx.split_sentences(text)
+        if not units:
+            raise ValueError("Nothing to speak.")
+        parts, sr = [], None
+        for n, unit in enumerate(units, 1):
+            if progress:
+                progress(n, len(units))
+            tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False); tmp.close()
+            try:
+                self._tts_synth(snap, unit, tmp.name)
+                y, sr_i = audio_fx.load_wav_mono(tmp.name)
+            finally:
+                try: os.remove(tmp.name)
+                except OSError: pass
+            if sr is None:
+                sr = sr_i
+            elif sr_i != sr:
+                import librosa
+                y = librosa.resample(y, orig_sr=sr_i, target_sr=sr)
+            parts.append(y)
+        y, spans = audio_fx.stitch(parts, sr)
+        out = tempfile.NamedTemporaryFile(suffix=".wav", delete=False); out.close()
+        audio_fx.write_wav(out.name, y, sr)
+        ref = {"key": key, "path": out.name, "sr": sr,
+               "sentences": [(a, b, u) for (a, b), u in zip(spans, units)],
+               "pauses": audio_fx.find_pauses(y, sr)}
+        old = getattr(self, "_tl_ref", None)
+        self._tl_ref = ref
+        if old and old["path"] != ref["path"]:
+            try: os.remove(old["path"])
+            except OSError: pass
+        return ref
+
+    def _tl_inputs(self, ask=True):
+        """(text, sid) for the current settings, or None. Same checks as
+        Preview; on the main thread only."""
+        text = self.text_entry.get("1.0", tk.END).strip()
+        if not text:
+            if ask: messagebox.showerror("Error", "Please enter some text first.")
+            return None
+        key = self._engine_key()
+        sid = None
+        if key == "vctk":
+            sid = self.get_selected_speaker_id()
+            if not sid:
+                if ask: messagebox.showerror("Error", "Please select a valid voice.")
+                return None
+        elif key == "kokoro":
+            sid = self._kokoro_voice_arg()
+            if not sid:
+                if ask: messagebox.showerror("Kokoro", "Kokoro isn't installed (or no voice "
+                                             "is selected). Download it in Models & Setup.")
+                return None
+        elif ask and not self._ensure_engine_tos("xtts"):
+            return None
+        return text, sid
+
+    def _tl_current(self):
+        """(ref | None, status text) for the editor, matching the TTS tab."""
+        ref = getattr(self, "_tl_ref", None)
+        if not ref:
+            return None, "No timeline yet"
+        inp = self._tl_inputs(ask=False)
+        if inp and ref["key"] == (self._tts_snapshot(inp[1]), inp[0]) \
+                and os.path.exists(ref["path"]):
+            return ref, (f"Timeline: {len(ref['sentences'])} sentences, "
+                         f"{ref['sentences'][-1][1]:.1f} s")
+        return None, "Text/voice changed - regenerate"
+
+    def _tl_generate(self, done):
+        inp = self._tl_inputs()
+        if not inp:
+            done()          # lets the editor reset its status text
+            return
+        text, sid = inp
+        snap = self._tts_snapshot(sid)
+        self._start_loading("Generating timeline (one sentence at a time)...")
+        self._set_tts_status("Generating timeline...", YELLOW)
+
+        def work():
+            try:
+                def prog(n, total):
+                    self.root.after(0, lambda: self._set_tts_status(
+                        f"Generating timeline: sentence {n}/{total}...", YELLOW))
+                self._get_timed_ref(text, snap, prog)
+                self.root.after(0, self._stop_loading)
+                self.root.after(0, lambda: self._set_tts_status("Timeline ready", GREEN))
+                self.root.after(0, done)
+            except Exception as e:
+                print(f"[AVS] Timeline failed: {e}")
+                traceback.print_exc()
+                self.root.after(0, self._stop_loading)
+                self.root.after(0, lambda: messagebox.showerror("Timeline Error", str(e)))
+                self.root.after(0, lambda: self._set_tts_status("Error", RED))
+                self.root.after(0, done)
+        threading.Thread(target=work, daemon=True).start()
+
+    def _tl_play(self):
+        ref, _t = self._tl_current()
+        if not ref:
+            messagebox.showinfo("Timeline", "Generate the timeline first.")
+            return
+        pygame.mixer.music.load(ref["path"]); pygame.mixer.music.play()
+        self._set_tts_status("Playing original (no effects)", GREEN)
+
     def preview_voice(self):
         text = self._get_text()
         if not text: return
@@ -2049,14 +2184,13 @@ class AIApp:
         try:
             tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False); tmp.close()
             self.preview_temp = tmp.name
-            if self._is_xtts():
-                lang = LANG_XTTS[self.xtts_lang_var.get()]
-                if lang not in XTTS_SUPPORTED: lang = "en"
-                TTS_ENGINES["xtts"].synthesize(text, self._xtts_voice_arg(), tmp.name, lang)
-            elif self._engine_key() == "kokoro":
-                TTS_ENGINES["kokoro"].synthesize(text, sid, tmp.name)
+            if self._curves.get("on"):
+                # curves are placed on a timeline built sentence by sentence;
+                # reuse that exact audio so they line up
+                ref = self._get_timed_ref(text, self._tts_snapshot(sid))
+                shutil.copyfile(ref["path"], tmp.name)
             else:
-                TTS_ENGINES["vctk"].synthesize(text, sid, tmp.name)
+                self._tts_synth(self._tts_snapshot(sid), text, tmp.name)
             fx = self._apply_tts_fx(tmp.name, "speed", "pitch", "volume")
             print(f"[AVS] Preview ready in {time.time()-t0:.1f}s -> {tmp.name}")
             pygame.mixer.music.load(tmp.name); pygame.mixer.music.play()
@@ -2103,14 +2237,11 @@ class AIApp:
     def _do_save(self, text, sid, out):
         t0 = self._log_tts_job(text, sid, "Save")
         try:
-            if self._is_xtts():
-                lang = LANG_XTTS[self.xtts_lang_var.get()]
-                if lang not in XTTS_SUPPORTED: lang = "en"
-                TTS_ENGINES["xtts"].synthesize(text, self._xtts_voice_arg(), out, lang)
-            elif self._engine_key() == "kokoro":
-                TTS_ENGINES["kokoro"].synthesize(text, sid, out)
+            if self._curves.get("on"):
+                ref = self._get_timed_ref(text, self._tts_snapshot(sid))
+                shutil.copyfile(ref["path"], out)
             else:
-                TTS_ENGINES["vctk"].synthesize(text, sid, out)
+                self._tts_synth(self._tts_snapshot(sid), text, out)
             fx = self._apply_tts_fx(out, "speed", "pitch", "volume")
             print(f"[AVS] Saved in {time.time()-t0:.1f}s -> {out}")
             self.root.after(0, self._stop_loading)
@@ -3441,7 +3572,11 @@ def _open_curve_editor(self):
     from curve_editor import open_editor
     colors = {"bg": BG, "card": CARD, "fg": FG, "dim": FG_DIM,
               "border": BORDER, "accent": CYAN, "surface": SURFACE}
-    open_editor(self.root, self._curves, self.tts_curves_on, colors)
+    hooks = {"get_ref": self._tl_current,
+             "generate": self._tl_generate,
+             "play": self._tl_play,
+             "preview": self.preview_voice}
+    open_editor(self.root, self._curves, self.tts_curves_on, colors, hooks=hooks)
 
 
 # Patch these methods onto AIApp
