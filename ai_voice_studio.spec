@@ -87,19 +87,30 @@ except Exception:
 # ── Models folder (optional) ─────────────────────────────────
 _model_datas = [('models', 'models')] if os.path.isdir('models') else []
 
+# ── Kokoro TTS (kokoro-onnx): ONNX Runtime binaries, espeak-ng loader
+# (ships the espeak-ng shared lib + data as package files), phonemizer.
+_ko_datas, _ko_bins, _ko_hidden = [], [], []
+for _pkg in ('kokoro_onnx', 'espeakng_loader', 'onnxruntime', 'phonemizer'):
+    try:
+        _d, _b, _h = collect_all(_pkg)
+        _ko_datas += _d; _ko_bins += _b; _ko_hidden += _h
+    except Exception as e:
+        print(f"Kokoro collection warning ({_pkg}): {e}")
+
 a = Analysis(
     ['main.py'],
     pathex=['.'],
-    binaries=_vosk_binaries + _numpy_bins + _torch_bins + _torchaudio_bins + _tf_bins,
-    datas=_vosk_datas + _model_datas + _tts_datas + _trainer_datas + _gruut_datas + _numpy_datas + _torch_datas + _torchaudio_datas + _tf_datas,
-    hiddenimports=_torch_hidden + _torchaudio_hidden + _tf_hidden + [
+    binaries=_vosk_binaries + _numpy_bins + _torch_bins + _torchaudio_bins + _tf_bins + _ko_bins,
+    datas=_vosk_datas + _model_datas + _tts_datas + _trainer_datas + _gruut_datas + _numpy_datas + _torch_datas + _torchaudio_datas + _tf_datas + _ko_datas,
+    hiddenimports=_torch_hidden + _torchaudio_hidden + _tf_hidden + _ko_hidden + [
         # Our own engines/ package (VCTK/XTTS plugin architecture) -
         # a normal local package import in main.py, so PyInstaller's
         # static analysis should already catch it via Analysis(['main.py'],
         # pathex=['.']), but listed explicitly since this project has
         # repeatedly hit cases where 'should be automatic' wasn't.
         'engines', 'engines.base', 'engines.paths', 'engines.registry',
-        'engines.coqui_vctk', 'engines.coqui_xtts',
+        'engines.coqui_vctk', 'engines.coqui_xtts', 'engines.kokoro',
+        'audio_fx', 'live_pitch', 'curve_editor',
         'TTS', 'TTS.api', 'TTS.tts', 'TTS.tts.configs.xtts_config',
         'TTS.tts.configs', 'TTS.tts.models', 'TTS.tts.utils',
         'TTS.tts.layers', 'TTS.utils.audio', 'TTS.utils.io',

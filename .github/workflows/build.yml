@@ -31,7 +31,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install pyinstaller
-        pip install "coqui-tts[codec]" "transformers>=4.46,<4.57" torch==2.10.0 torchaudio==2.10.0 openai-whisper vosk pygame SpeechRecognition PyAudio numpy librosa --extra-index-url https://download.pytorch.org/whl/cpu
+        pip install "coqui-tts[codec]" "transformers>=4.46,<4.57" torch==2.10.0 torchaudio==2.10.0 openai-whisper vosk pygame SpeechRecognition PyAudio numpy librosa kokoro-onnx --extra-index-url https://download.pytorch.org/whl/cpu
       shell: cmd
 
     - name: Patch TTS for PyInstaller
@@ -116,7 +116,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install pyinstaller
-        pip install "coqui-tts[codec]" "transformers>=4.46,<4.57" torch==2.10.0 torchaudio==2.10.0 openai-whisper vosk pygame SpeechRecognition PyAudio numpy librosa --extra-index-url https://download.pytorch.org/whl/cpu
+        pip install "coqui-tts[codec]" "transformers>=4.46,<4.57" torch==2.10.0 torchaudio==2.10.0 openai-whisper vosk pygame SpeechRecognition PyAudio numpy librosa kokoro-onnx --extra-index-url https://download.pytorch.org/whl/cpu
 
     - name: Patch TTS for PyInstaller
       run: python patch_tts_for_pyinstaller.py
@@ -183,7 +183,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install pyinstaller
-        pip install "coqui-tts[codec]" "transformers>=4.46,<4.57" torch==2.10.0 torchaudio==2.10.0 openai-whisper vosk pygame SpeechRecognition PyAudio numpy librosa
+        pip install "coqui-tts[codec]" "transformers>=4.46,<4.57" torch==2.10.0 torchaudio==2.10.0 openai-whisper vosk pygame SpeechRecognition PyAudio numpy librosa kokoro-onnx
 
     - name: Patch TTS for PyInstaller
       run: python patch_tts_for_pyinstaller.py

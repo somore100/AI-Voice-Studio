@@ -16,13 +16,14 @@ Nothing else in the app needs to change - the Models table rows, the
 Check All / Download Missing buttons, per-engine license dialogs, and
 the voice dropdown all populate themselves from this dict.
 """
-from . import coqui_vctk, coqui_xtts
+from . import coqui_vctk, coqui_xtts, kokoro
 
 
 def get_tts_engines(models_base):
     return {
         "vctk": coqui_vctk.build(models_base),
         "xtts": coqui_xtts.build(models_base),
+        "kokoro": kokoro.build(models_base),
         # Future engines go here, e.g.:
         # "piper":       piper.build(models_base),
         # "kokoro":      kokoro.build(models_base),

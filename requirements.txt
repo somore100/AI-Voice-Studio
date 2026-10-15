@@ -11,6 +11,7 @@ SpeechRecognition
 PyAudio
 numpy
 librosa
+kokoro-onnx
 
 # Captions/subtitles feature (subtitles.py) needs the ffmpeg *binary* on
 # PATH to extract audio from video/audio files - this is a system

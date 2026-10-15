@@ -1006,7 +1006,8 @@ class AIApp:
         self.tts_engine = tk.StringVar(value="VCTK (English voices)")
         ttk.Combobox(eng, textvariable=self.tts_engine, state="readonly",
                      width=30, font=("Segoe UI",9),
-                     values=["VCTK (English voices)", "XTTS-v2 (Multilingual)"]
+                     values=["VCTK (English voices)", "XTTS-v2 (Multilingual)",
+                             "Kokoro (Fast, natural)"]
                      ).pack(side="left", padx=(4,10))
         self.tts_engine.trace_add("write", lambda *_: self._on_engine_change())
 
@@ -1072,8 +1073,26 @@ class AIApp:
         self._xtts_clone_clear.pack(side="left", padx=4)
         self._xtts_clone_clear.pack_forget()  # only shown once a clone file is set
 
+        # Kokoro panel (voice list comes from the voices file, so it is
+        # filled in when the engine is selected - see _on_engine_change)
+        self._kokoro_panel = tk.Frame(f, bg=CARD)
+        self._label(self._kokoro_panel,
+                    "Kokoro  54 voices in 9 languages - the voice decides the language",
+                    fg=FG_DIM, font=("Segoe UI",8)).pack(anchor="w", padx=4, pady=(4,0))
+        kvrow = tk.Frame(self._kokoro_panel, bg=CARD); kvrow.pack(fill="x", padx=4, pady=4)
+        self._label(kvrow, "Voice:").pack(side="left")
+        self._kokoro_map = {}
+        self.kokoro_voice_var = tk.StringVar(value="")
+        self._kokoro_dropdown = ttk.Combobox(
+            kvrow, textvariable=self.kokoro_voice_var, values=[],
+            state="readonly", width=34, font=("Segoe UI",9))
+        self._kokoro_dropdown.pack(side="left", padx=(4,10))
+        self._kokoro_note = self._label(kvrow, "", fg=YELLOW, font=("Segoe UI",8))
+        self._kokoro_note.pack(side="left")
+
         # Speed slider
         spd = tk.Frame(f, bg=CARD); spd.pack(fill="x", padx=2, pady=4)
+        self._speed_row = spd          # engine panels are packed before this row
         self._label(spd, "Speed:").pack(side="left")
         self.tts_speed = tk.DoubleVar(value=1.0)
         speed_slider = ttk.Scale(spd, from_=0.5, to=2.0, orient="horizontal",
@@ -1194,15 +1213,46 @@ class AIApp:
             return CLONE_PREFIX + self.xtts_clone_path
         return self.xtts_speaker_var.get()
 
+    def _engine_key(self):
+        e = self.tts_engine.get()
+        if e.startswith("XTTS"):
+            return "xtts"
+        return "kokoro" if e.startswith("Kokoro") else "vctk"
+
+    def _refresh_kokoro_voices(self):
+        spec = TTS_ENGINES["kokoro"]
+        try:
+            ids = spec.list_voices() if spec.is_installed() else []
+        except Exception as e:
+            print(f"[AVS] Kokoro voice list failed: {e}")
+            ids = []
+        from engines.kokoro import describe_voice
+        self._kokoro_map = {f"{vid}  -  {describe_voice(vid)}": vid for vid in ids}
+        names = list(self._kokoro_map)
+        self._kokoro_dropdown.config(values=names)
+        if names and self.kokoro_voice_var.get() not in self._kokoro_map:
+            default = next((n for n in names if n.startswith("af_heart")), names[0])
+            self.kokoro_voice_var.set(default)
+        self._kokoro_note.config(
+            text="" if names else "Not installed - download it in Models & Setup")
+
+    def _kokoro_voice_arg(self):
+        return self._kokoro_map.get(self.kokoro_voice_var.get())
+
     def _on_engine_change(self):
-        if self.tts_engine.get().startswith("XTTS"):
-            self._vctk_panel.pack_forget()
+        key = self._engine_key()
+        self._vctk_panel.pack_forget()
+        self._xtts_panel.pack_forget()
+        self._kokoro_panel.pack_forget()
+        self._xtts_lang_frame.pack_forget()
+        if key == "xtts":
             self._xtts_lang_frame.pack(side="left")
-            self._xtts_panel.pack(fill="x")
+            self._xtts_panel.pack(fill="x", before=self._speed_row)
+        elif key == "kokoro":
+            self._refresh_kokoro_voices()
+            self._kokoro_panel.pack(fill="x", before=self._speed_row)
         else:
-            self._xtts_panel.pack_forget()
-            self._xtts_lang_frame.pack_forget()
-            self._vctk_panel.pack(fill="x")
+            self._vctk_panel.pack(fill="x", before=self._speed_row)
 
     def _build_stt_frame(self):
         f = self._lf("Speech-to-Text")
@@ -1699,7 +1749,8 @@ class AIApp:
         self.vc_tts_choice = tk.StringVar(value=_VC_SAME_TTS)
         ttk.Combobox(r2, textvariable=self.vc_tts_choice, state="readonly",
                      values=[_VC_SAME_TTS, "VCTK (English voices)",
-                             "XTTS-v2 (Multilingual)"], width=26,
+                             "XTTS-v2 (Multilingual)", "Kokoro (Fast, natural)"],
+                     width=26,
                      font=("Segoe UI",9)).pack(side="left", padx=6)
         self._label(r2, "Voice:").pack(side="left")
         self.vc_voice_var = tk.StringVar(value="")
@@ -1846,6 +1897,8 @@ class AIApp:
                               f"voice={cfg['voice']} chars={len(text)}")
                         if cfg["tts"] == "vctk":
                             TTS_ENGINES["vctk"].synthesize(text, cfg["voice"], tmp.name)
+                        elif cfg["tts"] == "kokoro":
+                            TTS_ENGINES["kokoro"].synthesize(text, cfg["voice"], tmp.name)
                         else:
                             TTS_ENGINES["xtts"].synthesize(
                                 text, cfg["voice"], tmp.name, cfg["xtts_lang"])
@@ -1953,9 +2006,15 @@ class AIApp:
         text = self._get_text()
         if not text: return
         sid = None
-        if not self._is_xtts():
+        key = self._engine_key()
+        if key == "vctk":
             sid = self.get_selected_speaker_id()
             if not sid: messagebox.showerror("Error", "Please select a valid voice."); return
+        elif key == "kokoro":
+            sid = self._kokoro_voice_arg()
+            if not sid:
+                messagebox.showerror("Kokoro", "Kokoro isn't installed (or no voice is "
+                                     "selected). Download it in Models & Setup."); return
         else:
             # XTTS may need a first-time download, which requires CPML
             # license agreement. Resolve that here on the main thread -
@@ -1979,6 +2038,8 @@ class AIApp:
             voice = f"cloned from {os.path.basename(clone)}" if clone else self.xtts_speaker_var.get()
             print(f"[AVS] {label}: engine=XTTS-v2 voice={voice} "
                   f"lang={self.xtts_lang_var.get()} chars={len(text)}")
+        elif self._engine_key() == "kokoro":
+            print(f"[AVS] {label}: engine=Kokoro voice={sid} chars={len(text)}")
         else:
             print(f"[AVS] {label}: engine=VCTK voice={sid} chars={len(text)}")
         return time.time()
@@ -1992,6 +2053,8 @@ class AIApp:
                 lang = LANG_XTTS[self.xtts_lang_var.get()]
                 if lang not in XTTS_SUPPORTED: lang = "en"
                 TTS_ENGINES["xtts"].synthesize(text, self._xtts_voice_arg(), tmp.name, lang)
+            elif self._engine_key() == "kokoro":
+                TTS_ENGINES["kokoro"].synthesize(text, sid, tmp.name)
             else:
                 TTS_ENGINES["vctk"].synthesize(text, sid, tmp.name)
             fx = self._apply_tts_fx(tmp.name, "speed", "pitch", "volume")
@@ -2019,9 +2082,15 @@ class AIApp:
         text = self._get_text()
         if not text: return
         sid = None
-        if not self._is_xtts():
+        key = self._engine_key()
+        if key == "vctk":
             sid = self.get_selected_speaker_id()
             if not sid: messagebox.showerror("Error", "Please select a valid voice."); return
+        elif key == "kokoro":
+            sid = self._kokoro_voice_arg()
+            if not sid:
+                messagebox.showerror("Kokoro", "Kokoro isn't installed (or no voice is "
+                                     "selected). Download it in Models & Setup."); return
         else:
             if not self._ensure_engine_tos("xtts"):
                 return
@@ -2038,6 +2107,8 @@ class AIApp:
                 lang = LANG_XTTS[self.xtts_lang_var.get()]
                 if lang not in XTTS_SUPPORTED: lang = "en"
                 TTS_ENGINES["xtts"].synthesize(text, self._xtts_voice_arg(), out, lang)
+            elif self._engine_key() == "kokoro":
+                TTS_ENGINES["kokoro"].synthesize(text, sid, out)
             else:
                 TTS_ENGINES["vctk"].synthesize(text, sid, out)
             fx = self._apply_tts_fx(out, "speed", "pitch", "volume")
@@ -2479,7 +2550,7 @@ def _do_download_missing(self):
         if "Missing" in status.cget("text"):
             missing_pkgs.append(key)
 
-    for key in ["whisper", "vctk", "xtts"]:
+    for key in ["whisper", *TTS_ENGINES.keys()]:
         status, _ = self._model_rows[key]
         if "Missing" in status.cget("text"):
             missing_models.append(key)
@@ -2911,6 +2982,8 @@ def _model_paths(key):
         found += [os.path.join(WHISPER_MODEL_DIR, "small.pt"),
                   os.path.join(xdg, "whisper", "small.pt"),
                   os.path.join(home, ".cache", "whisper", "small.pt")]
+    elif key == "kokoro":
+        found.append(os.path.join(_MODELS_BASE, "kokoro"))
     elif key in ("vctk", "xtts"):
         sub = {"vctk": "vctk", "xtts": "xtts_v2"}[key]
         found.append(os.path.join(_MODELS_BASE, sub))
@@ -2973,7 +3046,8 @@ def _uninstall_model(self, key):
                 _whisper_model = None
             else:
                 mod = sys.modules.get({"vctk": "engines.coqui_vctk",
-                                       "xtts": "engines.coqui_xtts"}[key])
+                                       "xtts": "engines.coqui_xtts",
+                                       "kokoro": "engines.kokoro"}[key])
                 if mod is not None:
                     mod._instance = None
         except Exception:
@@ -3152,6 +3226,10 @@ def _vc_refresh_voices(self):
     elif choice.startswith("XTTS"):
         from engines.coqui_xtts import PRESET_SPEAKERS
         names = list(PRESET_SPEAKERS) + ["Cloned voice (from Text-to-Speech tab)"]
+    elif choice.startswith("Kokoro"):
+        self._refresh_kokoro_voices()
+        self._vc_voice_map = dict(self._kokoro_map)
+        names = list(self._vc_voice_map)
     else:
         names = []
     self._vc_voice_cb.config(values=names, state="readonly" if names else "disabled")
@@ -3183,13 +3261,18 @@ def _vc_resolve(self):
 
     tts = self.vc_tts_choice.get()
     if tts == _VC_SAME_TTS:
-        key = "xtts" if self._is_xtts() else "vctk"
+        key = self._engine_key()
         if key == "vctk":
             voice = self.get_selected_speaker_id()
+        elif key == "kokoro":
+            voice = self._kokoro_voice_arg()
         else:
             voice = self._xtts_voice_arg()
     elif tts.startswith("VCTK"):
         key = "vctk"
+        voice = self._vc_voice_map.get(self.vc_voice_var.get())
+    elif tts.startswith("Kokoro"):
+        key = "kokoro"
         voice = self._vc_voice_map.get(self.vc_voice_var.get())
     else:
         key = "xtts"

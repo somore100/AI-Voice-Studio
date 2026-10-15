@@ -59,6 +59,26 @@ This project uses the following open-source libraries and tools. We are grateful
 - **URL**: https://librosa.org
 - **Description**: Python library for audio and music analysis
 
+### kokoro-onnx
+- **License**: MIT License
+- **URL**: https://github.com/thewh1teagle/kokoro-onnx
+- **Description**: ONNX Runtime wrapper for the Kokoro text-to-speech model
+
+### Kokoro-82M (model weights)
+- **License**: Apache License 2.0
+- **URL**: https://huggingface.co/hexgrad/Kokoro-82M
+- **Description**: 82M-parameter text-to-speech model, downloaded on demand (int8 ONNX build, ~120 MB)
+
+### ONNX Runtime
+- **License**: MIT License
+- **URL**: https://github.com/microsoft/onnxruntime
+- **Description**: Cross-platform inference engine used to run Kokoro on the CPU
+
+### espeakng-loader / eSpeak NG
+- **License**: eSpeak NG is GPL-3.0-or-later (the loader package is a separate project - confirm its license before release)
+- **URL**: https://github.com/thewh1teagle/espeakng-loader
+- **Description**: Supplies the eSpeak NG library kokoro-onnx uses to turn text into phonemes
+
 ## System Dependencies
 
 ### FFmpeg
