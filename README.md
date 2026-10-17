@@ -1,97 +1,88 @@
 # AI-Voice-Studio
 
-AI-Voice-Studio is a desktop application for working with AI-powered voice generation and speech tools through a simple interface.
-
-Instead of having to interact with models and command-line tools individually, AI-Voice-Studio provides a unified interface for experimenting with and using voice-generation technology.
+An offline desktop app that puts text-to-speech, speech-to-text, translation and a live voice changer behind one simple interface. It wraps open-source models, so you do not have to wrestle with each model, its dependencies and its command line separately.
 
 > **Status:** Active development
 
+<img width="817" height="695" alt="AI_voice_studio" src="https://github.com/user-attachments/assets/bda9a7f6-6b42-42c5-9651-b0b3ad299cc3" />
+
 ## ✨ Features
 
-* 🎙️ AI-powered voice generation
-* 🖥️ User-friendly interface
-* 🔊 Audio generation and playback
-* 🤖 Support for open-source AI voice models
-* ⚙️ Simple configuration and model management
-* 🧩 Designed to work with different voice-generation backends
-* 🚀 Built to make experimenting with AI voice technology easier
+**Text-to-Speech** (runs locally, no cloud)
+* Three engines in one app: **VCTK** (100+ English voices), **XTTS-v2** (17 languages, voice cloning) and **Kokoro** (fast, natural, 54 voices in 8 languages)
+* Speed, pitch and volume sliders - or type an exact value
+* **Depth** control: changes the "body" of a voice (deeper or lighter) without changing its pitch
+* **Curve editor:** draw speed, pitch and volume curves over a waveform timeline with sentence markers, zoom and snap-to-pause
+* Preview, save to WAV, favourite voices
 
-​##🎯 Why AI-Voice-Studio?##
-​AI voice tools can be powerful, but getting everything working together often means wrestling with models, dependencies, command-line tools, complex configuration, and fragmented interfaces.
-​AI-Voice-Studio solves this differently—not by trying to outperform every specialized voice generator, but by combining multiple voice generation technologies and models into one unified interface.
-​What makes it stand out:
-   ​🔗 Multi-backend support: Integrate
-   various AI voice models and APIs (with     more coming) without switching between     different tools
-   ​🎨 Quality-of-life features: Built-in      audio generation, playback, model          management, and simple configuration—.     all in one place
-  ​🔐 Open and extensible: Add your own       models, backends, and plugins to tailor    the tool to your workflow(soon)
+**Speech-to-Text**
+* **Whisper** and **Vosk** engines, many languages
+* Captions: turn audio or video into SRT / VTT subtitles (needs the `ffmpeg` binary)
 
-​A note on development:
-​Building AI-Voice-Studio means ~45-60 minutes per test cycle due to compilation requirements with frozen builds. So development is desently slowed
+**Translator**
+* Text translation between many languages
 
-## 🛠️ Development
+**Voice changer**
+* *TTS pipeline:* your microphone is transcribed and re-spoken in a chosen voice, with its own spoken-language setting (or auto-detect with Whisper)
+* *Live Pitch:* instant pitch shifting
+* Optional virtual microphone for calls and chat apps (Linux, via PipeWire / PulseAudio)
 
-AI-Voice-Studio is primarily a wrapper/interface around existing AI technologies and open-source models.
-
-The project itself does not claim ownership of third-party models, libraries, datasets, or other components used by the application.
-
-Different components may be distributed under different licenses. See the relevant project documentation and `THIRD-PARTY-NOTICES.md` where applicable.
+**Quality of life**
+* Searchable drop-downs for every long list (languages, voices, microphones)
+* Models & Setup panel: download, check and uninstall models from inside the app
+* Your settings are remembered between launches
+* Dark theme
 
 ## 📦 Installation
 
-Installation instructions will be provided here as the project develops.
+Builds for Windows, Linux (AppImage) and macOS are produced by GitHub Actions: open the **Actions** tab, choose **Build All Platforms** and download the artifact for your system (or check the Releases page if a release has been published).
 
-For development builds, clone the repository and follow the setup instructions provided in the project documentation.
+On first use, open **Models & Setup** and download the models you want. They are stored on your machine; nothing is sent to a server when you generate speech.
+
+### Run from source
+
+Requirements: Python 3.12, plus a few system tools.
+
+```bash
+git clone https://github.com/somore100/AI-Voice-Studio.git
+cd AI-Voice-Studio
+python3.12 -m venv venv
+source venv/bin/activate          # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+python main.py
+```
+
+System tools: `ffmpeg` (captions), `espeak-ng` (some voices), PortAudio (microphone input). On Linux, the voice changer's virtual microphone needs `pactl` / `paplay` (PipeWire or PulseAudio).
+
+Where things are stored: models live in `./models/` when running from source (packaged Linux builds use `~/.local/share/AI Voice Studio/models`); settings are saved to a small `settings.json` in your user config folder.
+
+## 🚧 Known gaps
+
+* The virtual microphone is Linux-only for now (Windows VB-Cable and macOS BlackHole support are not done).
+* Frozen builds take 45-60 minutes per test cycle, so Windows and macOS builds get tested less often than Linux.
+* Depth, like the other effects, is applied after speech is generated, so very large settings can sound slightly metallic.
 
 ## 🤝 Contributing
 
-Contributions are welcome.
+Contributions are welcome: bug reports, feature ideas, interface and documentation improvements, fixes, integrations and performance work. For a larger change, please open an issue first so the approach can be discussed.
 
-You can contribute by:
+## ⚠️ Third-party models and software
 
-* Reporting bugs
-* Suggesting features
-* Improving the interface
-* Improving documentation
-* Fixing issues
-* Adding integrations
-* Improving performance
-* Contributing code
-
-If you're planning a larger change, opening an issue first is recommended so the approach can be discussed before significant work begins.
-
-## ⚠️ Third-Party Models & Software
-
-AI-Voice-Studio may use third-party models, libraries, APIs, and other software.
-
-These components are **not necessarily licensed under Apache License 2.0** and remain subject to their respective licenses and terms.
-
-Before redistributing a build of AI-Voice-Studio, make sure you comply with the licenses and terms of all third-party components included with or used by your distribution.
+AI-Voice-Studio uses third-party models, libraries and tools. They are **not** covered by this project's license and remain under their own licenses and terms - see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md). If you redistribute a build, you are responsible for complying with the licenses of everything included in it.
 
 ## 📄 License
 
-AI-Voice-Studio is licensed under the **Source-Available License v1.0**.
+AI-Voice-Studio is released under the **AI-Voice-Studio Source-Available License v1.0** - see [LICENSE.txt](LICENSE.txt) for the full text, which is the only authoritative version. In short:
 
-This means you are free to:
-
-* Use the software commercially
-* Modify the source code
-* Fork the project
-* Redistribute copies
-* Include it in larger projects
-* Create and sell products based on it
-
-You must comply with the terms of the Apache License 2.0, including applicable copyright and license notices.
-
-See the [LICENSE](LICENSE) file for the complete license.
-
-For the official Apache License 2.0 text and guidance, see the [Apache Software Foundation](https://www.apache.org/licenses/LICENSE-2.0).
+* You may view, study, use (personally or commercially) and modify the code.
+* You may create non-commercial forks and independent add-ons.
+* You may build larger commercial products or services that use AI-Voice-Studio as a component, as long as they add substantial functionality of their own.
+* You may **not** sell AI-Voice-Studio itself, sell a substantially derived fork, or rebrand it as a competing product without written permission.
+* Keep the license and copyright notices, and do not imply official endorsement.
 
 ## 👤 Author
 
-Created and maintained by **somore100**.
+Created and maintained by **somore100**. If you build something interesting with it, feel free to share it!
 
-If you build something interesting with AI-Voice-Studio, feel free to share it!
-
-<img width="817" height="695" alt="AI_voice_studio" src="https://github.com/user-attachments/assets/bda9a7f6-6b42-42c5-9651-b0b3ad299cc3" />
 <img width="817" height="695" alt="Ai_voice_studio 2026-08-24 18-48-10" src="https://github.com/user-attachments/assets/8b3a1d86-9509-4504-9222-c439fbe0d950" />
 <img width="817" height="695" alt="Ai_voice_studio 2026-08-24 18-47-37" src="https://github.com/user-attachments/assets/a7ccb209-ca22-44ea-b5dd-2b9000b077ae" />

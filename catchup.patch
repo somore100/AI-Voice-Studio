@@ -1,0 +1,729 @@
+diff --git a/main.py b/main.py
+index 72b3868..6ed144d 100644
+--- a/main.py
++++ b/main.py
+@@ -689,7 +689,8 @@ class AIApp:
+                         fieldbackground=SURFACE, background=SURFACE,
+                         foreground=FG, selectbackground=SURFACE,
+                         selectforeground=FG, arrowcolor=FG)
+-        style.map("TCombobox", fieldbackground=[("readonly", SURFACE)])
++        style.map("TCombobox", fieldbackground=[("readonly", SURFACE), ("disabled", CARD), ("!disabled", SURFACE)],
++                  foreground=[("disabled", FG_DIM)])
+         style.configure("TCheckbutton", background=CARD, foreground=FG)
+         style.map("TCheckbutton", background=[("active",CARD)], foreground=[("active",FG)])
+         style.configure("Vertical.TScrollbar",
+@@ -950,7 +951,7 @@ class AIApp:
+         else:
+             self.selected_mic.set(default_display)
+             if hasattr(self, "mic_combo"):
+-                self.mic_combo["values"] = self.mics_display
++                self.mic_combo.set_values(self.mics_display)
+ 
+     def _autodetect_mic(self):
+         self._refresh_mic_list()
+@@ -1106,55 +1107,206 @@ class AIApp:
+         return lbl, bar
+ 
+     def _searchable_combo(self, parent, var, full_values, width, **pack_kw):
+-        # A plain ttk.Combobox with state="readonly" only lets you jump
+-        # to an entry by typing its first letter, one keypress at a time
+-        # - unusable for a ~95-entry list like the Translator's languages.
+-        # This makes it editable and filters the dropdown to substring
+-        # matches as you type, while still only ever committing one of
+-        # the real values to `var` (never arbitrary typed text), so
+-        # every caller that does e.g. LANG_TR[var.get()] stays safe.
+-        cb = ttk.Combobox(parent, textvariable=var, values=full_values,
+-                           width=width, font=("Segoe UI", 9))
+-        state = {"last_valid": var.get()}
+-
+-        def _post_dropdown():
+-            try:
+-                cb.tk.call("ttk::combobox::Post", cb)
++        """A drop-down you can type into. Typing filters the list (entries
++        that START with what you typed first, then entries that contain it)
++        in our own popup, which never takes keyboard focus - so you keep
++        typing. Up/Down move, Enter picks, Esc cancels, click picks.
++        `var` only ever receives a real entry, never half-typed text.
++        Use cb.set_values(list) to change the list and state "normal" /
++        "disabled" (not "readonly"); cb.set(v) / cb.get() act on `var`."""
++        import tkinter.font as tkfont
++        root = self.root
++        disp = tk.StringVar(value=var.get())
++        cb = ttk.Combobox(parent, textvariable=disp, width=width,
++                          font=("Segoe UI", 9))
++        st = {"values": list(full_values), "matches": [], "pop": None, "lb": None}
++        NAV = {"Up", "Down", "Return", "KP_Enter", "Escape", "Tab", "ISO_Left_Tab",
++               "Left", "Right", "Home", "End", "Shift_L", "Shift_R", "Control_L",
++               "Control_R", "Alt_L", "Alt_R", "Caps_Lock"}
++
++        def _disabled():
++            return str(cb.cget("state")) == "disabled"
++
++        def _commit(value):
++            var.set(value)
++            disp.set(value)
++
++        def _sync_in(*_):
++            if disp.get() != var.get():
++                disp.set(var.get())
++        var.trace_add("write", _sync_in)
++
++        def _hide(revert=False):
++            pop = st["pop"]
++            if pop is not None:
++                try:
++                    pop.destroy()
++                except tk.TclError:
++                    pass
++            st["pop"] = st["lb"] = None
++            if revert:
++                disp.set(var.get())
++
++        def _rank(typed):
++            vals = st["values"]
++            if not typed:
++                return list(vals)
++            t = typed.lower()
++            first = [v for v in vals if v.lower().startswith(t)]
++            rest = [v for v in vals if t in v.lower() and v not in first]
++            return first + rest
++
++        def _pick_from_listbox(index):
++            if st["matches"] and 0 <= index < len(st["matches"]):
++                _commit(st["matches"][index])
++            _hide()
++            cb.icursor("end")
++            cb.selection_range(0, "end")
++
++        def _show(matches, current=None):
++            if _disabled():
++                return
++            if not matches:
++                _hide()
++                return
++            st["matches"] = matches
++            rows = min(len(matches), 10)
++            if st["pop"] is None:
++                pop = tk.Toplevel(root)
++                pop.withdraw()
++                pop.overrideredirect(True)
++                pop.configure(bg=BORDER)
++                frm = tk.Frame(pop, bg=SURFACE)
++                frm.pack(padx=1, pady=1, fill="both", expand=True)
++                lb = tk.Listbox(frm, exportselection=False, activestyle="none",
++                                bg=SURFACE, fg=FG, selectbackground=CYAN,
++                                selectforeground=BG, highlightthickness=0,
++                                borderwidth=0, font=("Segoe UI", 9), takefocus=0)
++                sb = ttk.Scrollbar(frm, orient="vertical", command=lb.yview,
++                                   takefocus=0)
++                lb.configure(yscrollcommand=sb.set)
++                lb.pack(side="left", fill="both", expand=True)
++                st["sb"] = sb
++                st["pop"], st["lb"] = pop, lb
++                # Listbox's own click binding would grab keyboard focus;
++                # take over the mouse handling so focus stays in the entry.
++                lb.bind("<Button-1>", lambda e: "break")
++                lb.bind("<B1-Motion>", lambda e: "break")
++                lb.bind("<ButtonRelease-1>",
++                        lambda e: (_pick_from_listbox(lb.nearest(e.y)), "break")[1])
++                lb.bind("<Motion>", lambda e: (lb.selection_clear(0, "end"),
++                                               lb.selection_set(lb.nearest(e.y))))
++            lb = st["lb"]
++            lb.delete(0, "end")
++            lb.insert("end", *matches)
++            lb.configure(height=rows)
++            if len(matches) > rows:
++                st["sb"].pack(side="right", fill="y")
++            else:
++                st["sb"].pack_forget()
++            f = tkfont.Font(font=("Segoe UI", 9))
++            need = max(f.measure(m) for m in matches[:300]) + 36
++            w = max(cb.winfo_width(), min(need, 560))
++            root.update_idletasks()
++            x = cb.winfo_rootx()
++            y = cb.winfo_rooty() + cb.winfo_height()
++            h = rows * (f.metrics("linespace") + 2) + 4
++            if y + h > root.winfo_screenheight():
++                y = max(0, cb.winfo_rooty() - h)
++            st["pop"].geometry(f"{w}x{h}+{x}+{y}")
++            st["pop"].deiconify()
++            st["pop"].lift()
++            lb.selection_clear(0, "end")
++            idx = matches.index(current) if current in matches else 0
++            lb.selection_set(idx)
++            lb.see(idx)
++
++        def _on_key_release(e):
++            if e.keysym in NAV:
++                return
++            _show(_rank(disp.get().strip()))
++
++        def _on_key_press(e):
++            if _disabled():
++                return
++            lb = st["lb"]
++            if e.keysym in ("Down", "Up"):
++                if st["pop"] is None:
++                    _show(_rank(""), var.get())
++                else:
++                    sel = lb.curselection()
++                    i = sel[0] if sel else -1
++                    i = min(i + 1, lb.size() - 1) if e.keysym == "Down" else max(i - 1, 0)
++                    lb.selection_clear(0, "end")
++                    lb.selection_set(i)
++                    lb.see(i)
++                return "break"
++            if e.keysym in ("Return", "KP_Enter"):
++                if st["pop"] is not None and lb.curselection():
++                    _pick_from_listbox(lb.curselection()[0])
++                else:
++                    typed = disp.get().strip().lower()
++                    exact = next((v for v in st["values"] if v.lower() == typed), None)
++                    if exact:
++                        _commit(exact)
++                    else:
++                        disp.set(var.get())
++                    _hide()
++                    cb.selection_range(0, "end")
++                return "break"
++            if e.keysym == "Escape":
++                _hide(revert=True)
++                return "break"
++
++        def _on_click(e):
++            if _disabled():
++                return "break"
++            if "arrow" in str(cb.identify(e.x, e.y)):
+                 cb.focus_set()
++                if st["pop"] is not None:
++                    _hide()
++                else:
++                    _show(_rank(""), var.get())
++                return "break"
++            def _after():
++                cb.focus_set()
++                cb.selection_range(0, "end")
+                 cb.icursor("end")
+-            except tk.TclError:
+-                pass
++                _show(_rank(""), var.get())
++            cb.after_idle(_after)
++
++        def _on_focus_out(e):
++            typed = disp.get().strip().lower()
++            exact = next((v for v in st["values"] if v.lower() == typed), None)
++            if exact:
++                _commit(exact)
++            else:
++                disp.set(var.get())
++            _hide()
+ 
+-        def _on_key(event):
+-            if event.keysym in ("Up", "Down", "Return", "Escape", "Tab"):
++        def _outside(e):
++            if st["pop"] is None:
+                 return
+-            typed = var.get().strip().lower()
+-            matches = full_values if not typed else \
+-                [v for v in full_values if typed in v.lower()]
+-            cb["values"] = matches
+-            if matches:
+-                _post_dropdown()
+-
+-        def _commit(event=None):
+-            current = var.get().strip()
+-            lower_map = {v.lower(): v for v in full_values}
+-            if current in full_values:
+-                state["last_valid"] = current
+-            elif current.lower() in lower_map:
+-                var.set(lower_map[current.lower()])
+-                state["last_valid"] = lower_map[current.lower()]
+-            else:
+-                # No exact/case-insensitive match - fall back to the
+-                # first filtered result if there is one, else revert.
+-                filtered = list(cb["values"])
+-                var.set(filtered[0] if filtered else state["last_valid"])
+-                state["last_valid"] = var.get()
+-            cb["values"] = full_values
+-
+-        cb.bind("<KeyRelease>", _on_key)
+-        cb.bind("<<ComboboxSelected>>", _commit)
+-        cb.bind("<FocusOut>", _commit)
+-        cb.bind("<Return>", lambda e: (_commit(), cb.selection_range(0, "end")))
++            w = str(e.widget)
++            if w == str(cb) or w.startswith(str(st["pop"])):
++                return
++            _hide(revert=True)
++
++        cb.bind("<KeyPress>", _on_key_press)
++        cb.bind("<KeyRelease>", _on_key_release)
++        cb.bind("<Button-1>", _on_click)
++        cb.bind("<FocusOut>", _on_focus_out)
++        cb.bind("<Destroy>", lambda e: _hide() if e.widget is cb else None)
++        for seq in ("<Button-1>", "<MouseWheel>", "<Button-4>", "<Button-5>"):
++            root.bind_all(seq, _outside, add="+")
++
++        def set_values(values):
++            st["values"] = list(values)
++            if st["pop"] is not None:
++                _show(_rank(disp.get().strip()))
++        cb.set_values = set_values
++        cb.set = lambda v: _commit(v)       # act on `var`, not the display text
++        cb.get = lambda: var.get()
+         if pack_kw:
+             cb.pack(**pack_kw)
+         return cb
+@@ -1236,9 +1388,8 @@ class AIApp:
+         self._xtts_lang_frame = tk.Frame(eng, bg=CARD)
+         self._label(self._xtts_lang_frame, "Language:").pack(side="left")
+         self.xtts_lang_var = tk.StringVar(value=XTTS_LANG_DISPLAY[0])
+-        ttk.Combobox(self._xtts_lang_frame, textvariable=self.xtts_lang_var,
+-                     values=XTTS_LANG_DISPLAY, state="readonly",
+-                     width=16, font=("Segoe UI",9)).pack(side="left", padx=4)
++        self._searchable_combo(self._xtts_lang_frame, self.xtts_lang_var,
++                               XTTS_LANG_DISPLAY, width=16, side="left", padx=4)
+ 
+         self._label(f, "Enter text to speak:").pack(anchor="w", padx=2, pady=(2,2))
+         self.text_entry = self._textarea(f, height=4)
+@@ -1247,9 +1398,8 @@ class AIApp:
+         vrow = tk.Frame(self._vctk_panel, bg=CARD); vrow.pack(fill="x", padx=2, pady=3)
+         self._label(vrow, "Voice:").pack(side="left")
+         self.speaker_var = tk.StringVar()
+-        self.speaker_dropdown = ttk.Combobox(vrow, textvariable=self.speaker_var,
+-                                              state="readonly", width=28, font=("Segoe UI",9))
+-        self.speaker_dropdown.pack(side="left", padx=(4,10))
++        self.speaker_dropdown = self._searchable_combo(
++            vrow, self.speaker_var, [], width=28, side="left", padx=(4,10))
+         self._label(vrow, "Filter:").pack(side="left")
+         self.gender_filter = tk.StringVar(value="All")
+         for lbl, val in [("All","All"),("Fav","Fav"),("Male","Male"),("Female","Female")]:
+@@ -1277,11 +1427,9 @@ class AIApp:
+         xtts_voices = TTS_ENGINES["xtts"].list_voices()
+         self.xtts_speaker_var = tk.StringVar(
+             value=xtts_voices[0] if xtts_voices else "")
+-        self._xtts_preset_dropdown = ttk.Combobox(
+-            xvrow, textvariable=self.xtts_speaker_var,
+-            values=xtts_voices, state="readonly",
+-            width=22, font=("Segoe UI",9))
+-        self._xtts_preset_dropdown.pack(side="left", padx=(4,10))
++        self._xtts_preset_dropdown = self._searchable_combo(
++            xvrow, self.xtts_speaker_var, xtts_voices, width=22,
++            side="left", padx=(4,10))
+ 
+         self.xtts_clone_path = None
+         xcrow = tk.Frame(self._xtts_panel, bg=CARD); xcrow.pack(fill="x", padx=4, pady=(0,4))
+@@ -1305,10 +1453,8 @@ class AIApp:
+         self._label(kvrow, "Voice:").pack(side="left")
+         self._kokoro_map = {}
+         self.kokoro_voice_var = tk.StringVar(value="")
+-        self._kokoro_dropdown = ttk.Combobox(
+-            kvrow, textvariable=self.kokoro_voice_var, values=[],
+-            state="readonly", width=34, font=("Segoe UI",9))
+-        self._kokoro_dropdown.pack(side="left", padx=(4,10))
++        self._kokoro_dropdown = self._searchable_combo(
++            kvrow, self.kokoro_voice_var, [], width=34, side="left", padx=(4,10))
+         self._kokoro_note = self._label(kvrow, "", fg=YELLOW, font=("Segoe UI",8))
+         self._kokoro_note.pack(side="left")
+ 
+@@ -1412,7 +1558,7 @@ class AIApp:
+         self._xtts_clone_label.config(
+             text="  Using built-in preset voice above", fg=FG_DIM)
+         self._xtts_clone_clear.pack_forget()
+-        self._xtts_preset_dropdown.config(state="readonly")
++        self._xtts_preset_dropdown.config(state="normal")
+ 
+     def _xtts_voice_arg(self):
+         """The `voice` string to hand XTTS's synthesize(): a cloned
+@@ -1439,7 +1585,7 @@ class AIApp:
+         from engines.kokoro import describe_voice
+         self._kokoro_map = {f"{vid}  -  {describe_voice(vid)}": vid for vid in ids}
+         names = list(self._kokoro_map)
+-        self._kokoro_dropdown.config(values=names)
++        self._kokoro_dropdown.set_values(names)
+         if names and self.kokoro_voice_var.get() not in self._kokoro_map:
+             default = next((n for n in names if n.startswith("af_heart")), names[0])
+             self.kokoro_voice_var.set(default)
+@@ -1488,18 +1634,16 @@ class AIApp:
+                      ).pack(side="left", padx=(4,10))
+         self._label(eng_row, "Spoken language:").pack(side="left")
+         self.stt_lang_var = tk.StringVar(value=LANG_DISPLAY[0])
+-        ttk.Combobox(eng_row, textvariable=self.stt_lang_var,
+-                     values=LANG_DISPLAY, state="readonly",
+-                     width=16, font=("Segoe UI",9)).pack(side="left", padx=4)
++        self._searchable_combo(eng_row, self.stt_lang_var, LANG_DISPLAY,
++                               width=16, side="left", padx=4)
+ 
+         mic_row = tk.Frame(f, bg=CARD); mic_row.pack(fill="x", padx=2, pady=(2,0))
+         self._label(mic_row, "Mic:").pack(side="left")
+         self.recognizer   = sr.Recognizer()
+         self._refresh_mic_list(initial=True)
+-        self.mic_combo = ttk.Combobox(mic_row, textvariable=self.selected_mic,
+-                     values=self.mics_display, state="readonly",
+-                     width=36, font=("Segoe UI",9))
+-        self.mic_combo.pack(side="left", padx=6)
++        self.mic_combo = self._searchable_combo(
++            mic_row, self.selected_mic, self.mics_display, width=36,
++            side="left", padx=6)
+         self._btn(mic_row, "Autodetect", self._autodetect_mic,
+                   color=SURFACE, padx=8).pack(side="left")
+         self.always_on_top = tk.BooleanVar(value=False)
+@@ -1676,9 +1820,8 @@ class AIApp:
+         opts = tk.Frame(f, bg=CARD); opts.pack(fill="x", padx=2, pady=(0,4))
+         self._label(opts, "Spoken language:").pack(side="left")
+         self.captions_lang_var = tk.StringVar(value=LANG_DISPLAY[0])
+-        ttk.Combobox(opts, textvariable=self.captions_lang_var,
+-                     values=LANG_DISPLAY, state="readonly",
+-                     width=16, font=("Segoe UI",9)).pack(side="left", padx=(4,14))
++        self._searchable_combo(opts, self.captions_lang_var, LANG_DISPLAY,
++                               width=16, side="left", padx=(4,14))
+         self._label(opts, "Format:").pack(side="left")
+         self.captions_format_var = tk.StringVar(value="SRT")
+         ttk.Combobox(opts, textvariable=self.captions_format_var,
+@@ -1943,7 +2086,14 @@ class AIApp:
+         ttk.Combobox(r1, textvariable=self.vc_stt_choice, state="readonly",
+                      values=[_VC_SAME_STT, "Whisper", "Vosk"], width=26,
+                      font=("Segoe UI",9)).pack(side="left", padx=6)
+-        self._label(r1, "language: from the Speech-to-Text tab",
++
++        r1b = tk.Frame(f, bg=CARD); r1b.pack(fill="x", padx=2, pady=3)
++        self._label(r1b, "Spoken language:").pack(side="left")
++        self.vc_lang_var = tk.StringVar(value=_VC_SAME_LANG)
++        self._searchable_combo(r1b, self.vc_lang_var,
++                               [_VC_SAME_LANG, _VC_AUTO_LANG] + LANG_DISPLAY,
++                               width=26, side="left", padx=6)
++        self._label(r1b, "what YOU speak (auto-detect = Whisper only, a bit slower)",
+                     fg=FG_DIM, font=("Segoe UI",8)).pack(side="left")
+ 
+         r2 = tk.Frame(f, bg=CARD); r2.pack(fill="x", padx=2, pady=3)
+@@ -1957,10 +2107,9 @@ class AIApp:
+         self._label(r2, "Voice:").pack(side="left")
+         self.vc_voice_var = tk.StringVar(value="")
+         self._vc_voice_map = {}
+-        self._vc_voice_cb = ttk.Combobox(r2, textvariable=self.vc_voice_var,
+-                                         state="disabled", values=[], width=22,
+-                                         font=("Segoe UI",9))
+-        self._vc_voice_cb.pack(side="left", padx=6)
++        self._vc_voice_cb = self._searchable_combo(
++            r2, self.vc_voice_var, [], width=22, side="left", padx=6)
++        self._vc_voice_cb.config(state="disabled")
+         self.vc_tts_choice.trace_add("write", lambda *_: self._vc_refresh_voices())
+ 
+         # Output routing
+@@ -2042,80 +2191,10 @@ class AIApp:
+         self.root.after(0, lambda: self._vc_status.config(text="Stopped", fg=FG_DIM))
+ 
+     def _vc_loop(self):
+-        import numpy as np
+         mode = self.vc_mode.get()
+ 
+         if "TTS pipeline" in mode:
+-            # STT -> TTS pipeline
+-            cfg = self._vc_cfg
+-            mic_idx = self._resolve_mic_index()
+-            _vosk = _vrec_cls = None
+-            if cfg["stt"] == "vosk":
+-                try:
+-                    from vosk import KaldiRecognizer as _vrec_cls
+-                    self.root.after(0, lambda: self._vc_status.config(
+-                        text=f"Loading Vosk ({cfg['vlang']})...", fg=YELLOW))
+-                    _vosk = get_vosk_model(cfg["vlang"])
+-                except Exception as e:
+-                    self._vc_running = False
+-                    self.root.after(0, lambda err=str(e): self._vc_status.config(
+-                        text=f"Error: {err[:60]}", fg=RED))
+-                    return
+-
+-            while self._vc_running:
+-                try:
+-                    with self._open_mic(mic_idx) as source:
+-                        self.recognizer.adjust_for_ambient_noise(source, duration=0.3)
+-                        self.root.after(0, lambda: self._vc_status.config(
+-                            text="Listening...", fg=GREEN))
+-                        audio = self.recognizer.listen(source, phrase_time_limit=5)
+-
+-                    self.root.after(0, lambda: self._vc_status.config(
+-                        text="Processing...", fg=YELLOW))
+-
+-                    # STT
+-                    pcm = audio.get_raw_data(convert_rate=16000, convert_width=2)
+-                    if cfg["stt"] == "vosk":
+-                        rec = _vrec_cls(_vosk, 16000)
+-                        for _i in range(0, len(pcm), 8000):
+-                            rec.AcceptWaveform(pcm[_i:_i + 8000])
+-                        text = json.loads(rec.FinalResult()).get("text", "").strip()
+-                    else:
+-                        raw = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+-                        kw = {"language": cfg["wlang"]} if cfg.get("wlang") else {}
+-                        text = get_whisper_model().transcribe(
+-                            raw, fp16=False, **kw)["text"].strip()
+-
+-                    if text and self._vc_running:
+-                        print(f"[AVS] VC heard: \"{text}\"")
+-                        self.root.after(0, lambda t=text: self._vc_status.config(
+-                            text=f"Speaking: {t[:40]}", fg=CYAN))
+-                        # TTS output
+-                        import tempfile
+-                        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+-                        tmp.close()
+-                        t0 = time.time()
+-                        print(f"[AVS] VC speak: stt={cfg['stt']} tts={cfg['tts']} "
+-                              f"voice={cfg['voice']} chars={len(text)}")
+-                        if cfg["tts"] == "vctk":
+-                            TTS_ENGINES["vctk"].synthesize(text, cfg["voice"], tmp.name)
+-                        elif cfg["tts"] == "kokoro":
+-                            TTS_ENGINES["kokoro"].synthesize(text, cfg["voice"], tmp.name)
+-                        else:
+-                            TTS_ENGINES["xtts"].synthesize(
+-                                text, cfg["voice"], tmp.name, cfg["xtts_lang"])
+-                        self._apply_tts_fx(tmp.name, "vc_speed", "vc_pitch")
+-                        print(f"[AVS] VC speak ready in {time.time()-t0:.1f}s")
+-                        self._vc_play(tmp.name, cfg)
+-                        try:
+-                            os.remove(tmp.name)
+-                        except OSError:
+-                            pass
+-                except Exception as e:
+-                    if self._vc_running:
+-                        self.root.after(0, lambda err=str(e): self._vc_status.config(
+-                            text=f"Error: {err[:50]}", fg=RED))
+-                        time.sleep(1)
++            self._vc_pipeline()
+         else:
+             self._vc_live_loop()
+ 
+@@ -2147,7 +2226,7 @@ class AIApp:
+         entries.sort(key=lambda x: (not x[0], x[1]))
+         self._voice_name_map = {e[2]: e[1] for e in entries}
+         display = [e[2] for e in entries]
+-        self.speaker_dropdown["values"] = display
++        self.speaker_dropdown.set_values(display)
+         if display:
+             cur = self.speaker_var.get(); cn = self._voice_name_map.get(cur)
+             self.speaker_dropdown.set(
+@@ -3468,6 +3547,8 @@ import subprocess  # voice changer: virtual mic
+ 
+ _VC_SAME_STT = "Same as Speech-to-Text tab"
+ _VC_SAME_TTS = "Same as Text-to-Speech tab"
++_VC_SAME_LANG = "Same as Speech-to-Text tab"
++_VC_AUTO_LANG = "Auto-detect (Whisper only)"
+ _VMIC_SINK   = "avs_voice"
+ _VMIC_SOURCE = "avs_voice_mic"
+ _VMIC_LABEL  = "AI_Voice_Studio_Mic"
+@@ -3587,7 +3668,8 @@ def _vc_refresh_voices(self):
+         names = list(self._vc_voice_map)
+     else:
+         names = []
+-    self._vc_voice_cb.config(values=names, state="readonly" if names else "disabled")
++    self._vc_voice_cb.set_values(names)
++    self._vc_voice_cb.config(state="normal" if names else "disabled")
+     self.vc_voice_var.set(names[0] if names else "")
+ 
+ 
+@@ -3598,14 +3680,23 @@ def _vc_resolve(self):
+     if stt == _VC_SAME_STT:
+         stt = self.stt_engine.get() if hasattr(self, "stt_engine") else "Whisper"
+     lang_disp = self.stt_lang_var.get() if hasattr(self, "stt_lang_var") else "English"
++    lang_choice = self.vc_lang_var.get() if hasattr(self, "vc_lang_var") else _VC_SAME_LANG
++    auto_lang = lang_choice == _VC_AUTO_LANG
++    if lang_choice not in (_VC_SAME_LANG, _VC_AUTO_LANG) and lang_choice in LANG_WHISPER:
++        lang_disp = lang_choice
+     cfg = {"stt": "vosk" if stt.startswith("Vosk") else "whisper",
+-           "wlang": LANG_WHISPER.get(lang_disp), "vlang": LANG_VOSK.get(lang_disp),
++           "wlang": None if auto_lang else LANG_WHISPER.get(lang_disp),
++           "vlang": LANG_VOSK.get(lang_disp),
++           "lang_name": "auto" if auto_lang else lang_disp,
+            "playback": bool(self.vc_playback.get()),
+            "vmic": bool(self.vc_vmic.get()) and _vmic_available()}
+     if not cfg["playback"] and not cfg["vmic"]:
+         return None, ("msg", "Turn on Playback or Send to virtual microphone - "
+                              "otherwise the converted voice goes nowhere.")
+     if cfg["stt"] == "vosk":
++        if auto_lang:
++            return None, ("msg", "Auto-detect needs Whisper. Pick a language "
++                                 "or switch 'Hear with' to Whisper.")
+         if not VOSK_AVAILABLE:
+             return None, ("msg", "Vosk is not installed.")
+         if not cfg["vlang"] or not _vosk_model_ok(
+@@ -3792,6 +3883,173 @@ def _vc_live_loop(self):
+         self._vc_running = False
+ 
+ 
++def _vc_synth(self, cfg, text, out):
++    if cfg["tts"] == "vctk":
++        TTS_ENGINES["vctk"].synthesize(text, cfg["voice"], out)
++    elif cfg["tts"] == "kokoro":
++        TTS_ENGINES["kokoro"].synthesize(text, cfg["voice"], out)
++    else:
++        TTS_ENGINES["xtts"].synthesize(text, cfg["voice"], out, cfg["xtts_lang"])
++
++
++def _vc_pipeline(self):
++    """STT -> TTS voice changer. This thread only listens (mic opened and
++    calibrated once); a second worker thread does hear/speak/play so the
++    next phrase is already being captured meanwhile."""
++    import numpy as np
++    import queue
++    cfg = self._vc_cfg
++    self._vc_gen = getattr(self, "_vc_gen", 0) + 1
++    gen = self._vc_gen
++    self._vc_speaking = False       # True while our own voice is playing
++    self._vc_speak_seq = 0          # bumps every time playback starts
++    self._vc_speak_end = 0.0        # grace period after playback ends
++
++    def alive():
++        return self._vc_running and gen == self._vc_gen
++
++    def st(text, color):
++        if alive():
++            self.root.after(0, lambda: self._vc_status.config(text=text, fg=color))
++
++    def fail(msg):
++        if alive():
++            self._vc_running = False
++            self.root.after(0, lambda: self._vc_status.config(
++                text=f"Error: {msg[:60]}", fg=RED))
++
++    _vosk = _vrec_cls = None
++    try:
++        if cfg["stt"] == "vosk":
++            from vosk import KaldiRecognizer as _vrec_cls
++            st(f"Loading Vosk ({cfg['vlang']})...", YELLOW)
++            _vosk = get_vosk_model(cfg["vlang"])
++        else:
++            st("Loading Whisper...", YELLOW)
++            get_whisper_model()
++    except Exception as e:
++        fail(str(e))
++        return
++
++    jobs = queue.Queue(maxsize=3)
++
++    def worker():
++        while alive():
++            try:
++                pcm, t_cap = jobs.get(timeout=0.5)
++            except queue.Empty:
++                continue
++            tmp = None
++            err = False
++            try:
++                waiting = jobs.qsize()
++                st("Processing..." + (f" ({waiting} waiting)" if waiting else ""), YELLOW)
++                t0 = time.time()
++                lang_used = cfg.get("lang_name")
++                if cfg["stt"] == "vosk":
++                    rec = _vrec_cls(_vosk, 16000)
++                    for _i in range(0, len(pcm), 8000):
++                        rec.AcceptWaveform(pcm[_i:_i + 8000])
++                    text = json.loads(rec.FinalResult()).get("text", "").strip()
++                else:
++                    raw = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
++                    kw = {"language": cfg["wlang"]} if cfg.get("wlang") else {}
++                    res = get_whisper_model().transcribe(
++                        raw, fp16=False, temperature=0.0,
++                        condition_on_previous_text=False,
++                        without_timestamps=True, **kw)
++                    text = res["text"].strip()
++                    if not cfg.get("wlang"):
++                        lang_used = "auto->" + str(res.get("language", "?"))
++                t_hear = time.time()
++                if not text or not alive():
++                    continue
++                print(f"[AVS] VC heard: \"{text}\" (lang={lang_used})", flush=True)
++                st(f"Speaking: {text[:40]}", CYAN)
++                f = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
++                f.close()
++                tmp = f.name
++                print(f"[AVS] VC speak: stt={cfg['stt']} lang={lang_used} "
++                      f"tts={cfg['tts']} voice={cfg['voice']} chars={len(text)}",
++                      flush=True)
++                self._vc_synth(cfg, text, tmp)
++                self._apply_tts_fx(tmp, "vc_speed", "vc_pitch")
++                t_spk = time.time()
++                print(f"[AVS] VC timing: queued {t0 - t_cap:.2f}s | "
++                      f"hear {t_hear - t0:.2f}s | speak {t_spk - t_hear:.2f}s | "
++                      f"from end of your phrase to sound: {t_spk - t_cap:.2f}s "
++                      f"(+~0.55s silence wait before that)", flush=True)
++                self._vc_speaking = True
++                self._vc_speak_seq += 1
++                try:
++                    self._vc_play(tmp, cfg)
++                finally:
++                    self._vc_speaking = False
++                    self._vc_speak_end = time.time() + 0.4
++            except Exception as e:
++                err = True
++                print(f"[AVS] VC worker error: {e!r}", flush=True)
++                st(f"Error: {str(e)[:50]}", RED)
++                time.sleep(1)
++            finally:
++                if tmp:
++                    try:
++                        os.remove(tmp)
++                    except OSError:
++                        pass
++                if not err and jobs.empty():
++                    st("Listening...", GREEN)
++
++    threading.Thread(target=worker, daemon=True).start()
++
++    rec = self.recognizer
++    rec.pause_threshold = 0.55          # end of phrase after 0.55 s silence
++    rec.non_speaking_duration = 0.35
++    mic_idx = self._resolve_mic_index()
++    while alive():
++        try:
++            with self._open_mic(mic_idx) as source:
++                rec.adjust_for_ambient_noise(source, duration=0.5)
++                st("Listening...", GREEN)
++                while alive():
++                    was_speaking = self._vc_speaking
++                    seq0 = self._vc_speak_seq
++                    try:
++                        audio = rec.listen(source, timeout=1, phrase_time_limit=7)
++                    except sr.WaitTimeoutError:
++                        continue
++                    if not alive():
++                        break
++                    if cfg["playback"] and (was_speaking or self._vc_speaking
++                                            or seq0 != self._vc_speak_seq
++                                            or time.time() < self._vc_speak_end):
++                        print("[AVS] VC: ignored a phrase heard during our own "
++                              "playback", flush=True)
++                        continue
++                    pcm = audio.get_raw_data(convert_rate=16000, convert_width=2)
++                    if len(pcm) < 8000:         # < 0.25 s: a click, not speech
++                        continue
++                    item = (pcm, time.time())
++                    try:
++                        jobs.put_nowait(item)
++                    except queue.Full:
++                        try:
++                            jobs.get_nowait()
++                            print("[AVS] VC: behind - dropped the oldest phrase",
++                                  flush=True)
++                        except queue.Empty:
++                            pass
++                        try:
++                            jobs.put_nowait(item)
++                        except queue.Full:
++                            pass
++        except Exception as e:
++            print(f"[AVS] VC capture error: {e!r}", flush=True)
++            if alive():
++                st(f"Error: {str(e)[:50]}", RED)
++                time.sleep(1)
++
++
+ def _open_curve_editor(self):
+     from curve_editor import open_editor
+     colors = {"bg": BG, "card": CARD, "fg": FG, "dim": FG_DIM,
+@@ -3814,6 +4072,8 @@ AIApp._vc_refresh_voices = _vc_refresh_voices
+ AIApp._vc_resolve = _vc_resolve
+ AIApp._vc_report = _vc_report
+ AIApp._vc_play = _vc_play
++AIApp._vc_synth = _vc_synth
++AIApp._vc_pipeline = _vc_pipeline
+ AIApp._fx_track = _fx_track
+ AIApp._apply_tts_fx = _apply_tts_fx
+ AIApp._uninstall_model = _uninstall_model
