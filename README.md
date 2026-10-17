@@ -1,47 +1,75 @@
 # AI-Voice-Studio
 
-An offline desktop app that puts text-to-speech, speech-to-text, translation and a live voice changer behind one simple interface. It wraps open-source models, so you do not have to wrestle with each model, its dependencies and its command line separately.
+**Speak, listen, translate and change your voice - with AI models that run on your own computer.**
 
-> **Status:** Active development
+AI-Voice-Studio is a desktop app that puts text-to-speech, speech-to-text, subtitles, translation and a live voice changer behind one simple interface. It wraps open-source models, so you do not have to wrestle with each model, its dependencies and its command line separately.
 
-<img width="817" height="695" alt="AI_voice_studio" src="https://github.com/user-attachments/assets/bda9a7f6-6b42-42c5-9651-b0b3ad299cc3" />
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20macOS-blue)
+![Python](https://img.shields.io/badge/python-3.12-blue)
+![License](https://img.shields.io/badge/license-Source--Available%20v1.0-orange)
+![Status](https://img.shields.io/badge/status-active%20development-green)
 
-## ✨ Features
+<img width="817" height="695" alt="AI Voice Studio" src="https://github.com/user-attachments/assets/bda9a7f6-6b42-42c5-9651-b0b3ad299cc3" />
 
-**Text-to-Speech** (runs locally, no cloud)
-* Three engines in one app: **VCTK** (100+ English voices), **XTTS-v2** (17 languages, voice cloning) and **Kokoro** (fast, natural, 54 voices in 8 languages)
-* Speed, pitch and volume sliders - or type an exact value
-* **Depth** control: changes the "body" of a voice (deeper or lighter) without changing its pitch
-* **Curve editor:** draw speed, pitch and volume curves over a waveform timeline with sentence markers, zoom and snap-to-pause
-* Preview, save to WAV, favourite voices
+## ✨ What it does
 
-**Speech-to-Text**
-* **Whisper** and **Vosk** engines, many languages
-* Captions: turn audio or video into SRT / VTT subtitles (needs the `ffmpeg` binary)
+### 🎙️ Text-to-Speech
 
-**Translator**
-* Text translation between many languages
+Three engines in one app - pick whichever suits the job:
 
-**Voice changer**
-* *TTS pipeline:* your microphone is transcribed and re-spoken in a chosen voice, with its own spoken-language setting (or auto-detect with Whisper)
-* *Live Pitch:* instant pitch shifting
-* Optional virtual microphone for calls and chat apps (Linux, via PipeWire / PulseAudio)
+| Engine | Good for | Voices | Download |
+|---|---|---|---|
+| **Kokoro** | Fast, natural speech, even on a CPU | 54 voices, 8 languages | ~120 MB |
+| **VCTK** | English with lots of choice | 100+ English voices, favourites and male/female filter | ~150 MB |
+| **XTTS-v2** | Many languages and voice cloning | 17 languages, preset speakers or a cloned voice | ~1.8 GB |
 
-**Quality of life**
-* Searchable drop-downs for every long list (languages, voices, microphones)
-* Models & Setup panel: download, check and uninstall models from inside the app
-* Your settings are remembered between launches
+Shape the result after it is generated:
+
+* **Speed, Pitch, Volume** sliders - or just type an exact value (`150` = 150 %)
+* **Depth** - makes a voice deeper and bigger, or lighter and smaller, **without changing its pitch**
+* **Curve editor** - draw speed, pitch and volume curves over a zoomable waveform timeline with sentence markers, snap-to-pause, a zoom readout and a "play original" button, so you can slow down one sentence or lift the pitch on one word-sized stretch
+* Preview (one at a time), save to WAV
+
+### 👂 Speech-to-Text and subtitles
+
+* **Whisper** (accurate) and **Vosk** (light and fast) engines, 17 spoken languages
+* Transcribe your microphone, or a whole audio / video file
+* **Captions:** turn audio or video into **SRT** or **VTT** subtitles with word-level timing
+
+### 🌍 Translator
+
+* Translate text between a long list of languages (more than 100)
+* Uses Google Translate's web endpoint, so this one feature **needs an internet connection**
+
+### 🎭 Voice changer
+
+* **TTS pipeline:** your microphone is transcribed and re-spoken in the voice you choose (Kokoro, VCTK or XTTS), with its own "spoken language" setting or Whisper auto-detect
+* **Live Pitch:** instant pitch shifting with very low delay
+* Optional **virtual microphone** so call and chat apps can hear it (Linux, via PipeWire / PulseAudio)
+* Echo protection while your own speakers are on
+
+### 🧰 Quality of life
+
+* **Models & Setup** panel: download, verify and uninstall models from inside the app
+* **Search-as-you-type** drop-downs for every long list (languages, voices, microphones)
+* Your choices are **remembered between launches**
 * Dark theme
+
+## 🔒 Privacy
+
+Speech generation, speech recognition and the voice changer run **locally**. Nothing you type or say is sent to a server by them. Internet is only used to download models and for the Translator (your text goes to Google Translate).
 
 ## 📦 Installation
 
-Builds for Windows, Linux (AppImage) and macOS are produced by GitHub Actions: open the **Actions** tab, choose **Build All Platforms** and download the artifact for your system (or check the Releases page if a release has been published).
+### Ready-made builds
 
-On first use, open **Models & Setup** and download the models you want. They are stored on your machine; nothing is sent to a server when you generate speech.
+Builds for **Windows**, **Linux (AppImage)** and **macOS** are produced by GitHub Actions. Open the **Actions** tab, choose **Build All Platforms**, open the latest successful run and download the artifact for your system (or check the **Releases** page if a release has been published).
+
+On first use open **Models & Setup** and download the models you want. They are stored on your computer.
 
 ### Run from source
 
-Requirements: Python 3.12, plus a few system tools.
+You need **Python 3.12** plus a few system tools.
 
 ```bash
 git clone https://github.com/somore100/AI-Voice-Studio.git
@@ -52,27 +80,55 @@ pip install -r requirements.txt
 python main.py
 ```
 
-System tools: `ffmpeg` (captions), `espeak-ng` (some voices), PortAudio (microphone input). On Linux, the voice changer's virtual microphone needs `pactl` / `paplay` (PipeWire or PulseAudio).
+System tools:
 
-Where things are stored: models live in `./models/` when running from source (packaged Linux builds use `~/.local/share/AI Voice Studio/models`); settings are saved to a small `settings.json` in your user config folder.
+| Tool | Needed for |
+|---|---|
+| `ffmpeg` | Captions and transcribing audio / video files |
+| `espeak-ng` | Some voices |
+| PortAudio | Microphone input |
+| `pactl` / `paplay` (PipeWire or PulseAudio) | The voice changer's virtual microphone on Linux |
+
+Where things live: models are stored in `./models/` when you run from source (packaged Linux builds use `~/.local/share/AI Voice Studio/models`); settings are saved in a small `settings.json` in your user config folder.
+
+## 🗂️ Project layout
+
+| File | Purpose |
+|---|---|
+| `main.py` | The application and its interface |
+| `engines/` | The TTS engines (Kokoro, VCTK, XTTS-v2), model paths and downloads |
+| `audio_fx.py` | Speed, pitch, volume and depth processing, curve maths |
+| `curve_editor.py` | The curve editor window |
+| `live_pitch.py` | Real-time pitch shifter for the voice changer |
+| `subtitles.py` | Caption generation (SRT / VTT) |
+| `*.spec`, `build.py`, `build_appimage.sh`, `installer_public.iss` | Packaging for the three platforms |
+| `THIRD_PARTY_LICENSES.md` | Licenses of everything the app uses |
 
 ## 🚧 Known gaps
 
-* The virtual microphone is Linux-only for now (Windows VB-Cable and macOS BlackHole support are not done).
-* Frozen builds take 45-60 minutes per test cycle, so Windows and macOS builds get tested less often than Linux.
-* Depth, like the other effects, is applied after speech is generated, so very large settings can sound slightly metallic.
+* The virtual microphone is **Linux only** for now (Windows VB-Cable and macOS BlackHole support are planned).
+* Depth and the other effects are applied after speech is generated, so extreme settings can sound slightly metallic.
+* A full test of the packaged builds takes 45-60 minutes, so Windows and macOS builds are tested less often than Linux.
+
+## 🧭 What's next
+
+* A local API so other programs can request speech from the app
+* A faster voice changer (quicker speech recognition)
+* Choose a voice by traits instead of by name
+* Edit the speed or pitch of a selected piece of text
+* Virtual microphone for Windows and macOS
 
 ## 🤝 Contributing
 
-Contributions are welcome: bug reports, feature ideas, interface and documentation improvements, fixes, integrations and performance work. For a larger change, please open an issue first so the approach can be discussed.
+Contributions are welcome: bug reports, feature ideas, interface and documentation improvements, fixes, integrations and performance work. For a larger change, please open an issue first so the approach can be discussed before significant work begins.
 
 ## ⚠️ Third-party models and software
 
-AI-Voice-Studio uses third-party models, libraries and tools. They are **not** covered by this project's license and remain under their own licenses and terms - see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md). If you redistribute a build, you are responsible for complying with the licenses of everything included in it.
+AI-Voice-Studio is a wrapper and interface around existing open-source technology. It does not claim ownership of any third-party model, library or dataset. Those components are **not** covered by this project's license and each stays under its own license and terms - see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md). If you redistribute a build, you are responsible for complying with the licenses of everything included in it.
 
 ## 📄 License
 
-AI-Voice-Studio is released under the **AI-Voice-Studio Source-Available License v1.0** - see [LICENSE.txt](LICENSE.txt) for the full text, which is the only authoritative version. In short:
+AI-Voice-Studio is released under the **AI-Voice-Studio Source-Available License v1.0**. [LICENSE.txt](LICENSE.txt) is the only authoritative text; in short:
 
 * You may view, study, use (personally or commercially) and modify the code.
 * You may create non-commercial forks and independent add-ons.
@@ -82,7 +138,7 @@ AI-Voice-Studio is released under the **AI-Voice-Studio Source-Available License
 
 ## 👤 Author
 
-Created and maintained by **somore100**. If you build something interesting with it, feel free to share it!
+Created and maintained by **somore100**. If you build something interesting with AI-Voice-Studio, feel free to share it!
 
-<img width="817" height="695" alt="Ai_voice_studio 2026-08-24 18-48-10" src="https://github.com/user-attachments/assets/8b3a1d86-9509-4504-9222-c439fbe0d950" />
-<img width="817" height="695" alt="Ai_voice_studio 2026-08-24 18-47-37" src="https://github.com/user-attachments/assets/a7ccb209-ca22-44ea-b5dd-2b9000b077ae" />
+<img width="817" height="695" alt="AI Voice Studio screenshot" src="https://github.com/user-attachments/assets/8b3a1d86-9509-4504-9222-c439fbe0d950" />
+<img width="817" height="695" alt="AI Voice Studio screenshot" src="https://github.com/user-attachments/assets/a7ccb209-ca22-44ea-b5dd-2b9000b077ae" />
