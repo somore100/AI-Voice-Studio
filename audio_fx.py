@@ -6,6 +6,8 @@ already installed as coqui-tts dependencies); scipy is used for smooth
 curves when available.
 
 apply_fx(path, speed, pitch, volume=1.0)        constant speed / pitch / volume
+apply_fx(..., depth=d)                          + formant shift in semitones, pitch unchanged
+                                                (+ = formants up/lighter, - = deeper)
 apply_fx(path, speed, pitch, curves=state)      state from the curve editor:
     {"smooth": bool, "speed": [(x, mult), ...], "pitch": [(x, semitones), ...],
      "volume": [(x, gain), ...]}
@@ -22,6 +24,7 @@ import numpy as np
 SPEED_MIN, SPEED_MAX = 0.5, 2.0
 PITCH_MIN, PITCH_MAX = -12.0, 12.0
 VOL_MIN, VOL_MAX = 0.0, 2.0
+DEPTH_MIN, DEPTH_MAX = -8.0, 8.0     # "depth" in semitones of formant shift
 
 
 def curve_func(points, smooth=True, lo=None, hi=None):
@@ -217,11 +220,51 @@ def _soft_limit(y, knee=0.9):
     return y
 
 
-def apply_fx(path, speed=1.0, pitch=0.0, curves=None, volume=1.0):
+def formant_shift(y, sr, semitones, n_fft=2048, hop=512):
+    """Move the formants (the voice's 'body' / apparent throat size) by
+    `semitones` WITHOUT changing the pitch or the duration.
+
+    Positive = formants up (smaller, lighter, "chipmunk-ish" body),
+    negative = formants down (bigger, deeper body). Method: split each STFT
+    frame into a smooth spectral envelope (cepstral liftering = the
+    formants) and the fine structure (the pitch harmonics), warp ONLY the
+    envelope along the frequency axis, keep the original phase so the
+    harmonics - and so the pitch - stay where they were.
+    """
+    import librosa
+    y = np.asarray(y, dtype=np.float32)
+    if abs(semitones) < 0.05 or y.size < n_fft:
+        return y
+    f = 2.0 ** (float(semitones) / 12.0)
+    S = librosa.stft(y, n_fft=n_fft, hop_length=hop)
+    mag = np.abs(S)
+    logm = np.log(mag + 1e-7)
+    cep = np.fft.irfft(logm, n=n_fft, axis=0)
+    L = max(8, int(sr / 450.0))              # keep quefrencies below ~f0 max
+    lift = np.zeros(n_fft)
+    lift[:L] = 1.0
+    lift[-(L - 1):] = 1.0
+    env = np.fft.rfft(cep * lift[:, None], axis=0).real
+    K = env.shape[0]
+    src = np.clip(np.arange(K) / f, 0.0, K - 1.0)
+    i0 = np.floor(src).astype(int)
+    i1 = np.minimum(i0 + 1, K - 1)
+    w = (src - i0)[:, None]
+    env2 = env[i0] * (1.0 - w) + env[i1] * w
+    gain = np.exp(np.clip(env2 - env, -3.0, 3.0))      # at most +-26 dB
+    S2 = (mag * gain) * np.exp(1j * np.angle(S))
+    y2 = librosa.istft(S2, hop_length=hop, length=y.size).astype(np.float32)
+    r_in = float(np.sqrt(np.mean(y * y)) + 1e-9)
+    r_out = float(np.sqrt(np.mean(y2 * y2)) + 1e-9)
+    return (y2 * min(max(r_in / r_out, 0.25), 4.0)).astype(np.float32)
+
+
+def apply_fx(path, speed=1.0, pitch=0.0, curves=None, volume=1.0, depth=0.0):
     """Rewrite the WAV at `path`. Returns True if the file was modified."""
     speed = float(speed)
     pitch = float(pitch)
     volume = float(volume)
+    depth = min(max(float(depth), DEPTH_MIN), DEPTH_MAX)
     vol_pts = (curves or {}).get("volume")
     vol_curve = bool(vol_pts) and not _is_flat(vol_pts, 1.0)
     tp_curves = bool(curves) and not (
@@ -229,7 +272,8 @@ def apply_fx(path, speed=1.0, pitch=0.0, curves=None, volume=1.0):
     do_speed = abs(speed - 1.0) >= 0.01
     do_pitch = abs(pitch) >= 0.05
     do_vol = abs(volume - 1.0) >= 0.01
-    if not (tp_curves or vol_curve or do_speed or do_pitch or do_vol):
+    do_depth = abs(depth) >= 0.05
+    if not (tp_curves or vol_curve or do_speed or do_pitch or do_vol or do_depth):
         return False
 
     import librosa
@@ -251,6 +295,8 @@ def apply_fx(path, speed=1.0, pitch=0.0, curves=None, volume=1.0):
         if do_speed:
             y = librosa.effects.time_stretch(y, rate=speed)
 
+    if do_depth:                         # last: moves formants, keeps pitch
+        y = formant_shift(y, sr, depth)
     peak = float(np.max(np.abs(y))) if y.size else 0.0
     if vol_curve or do_vol:              # boosted: limit, don't rescale
         y = np.clip(_soft_limit(y), -1.0, 1.0)

@@ -733,6 +733,7 @@ class AIApp:
         ("tts_engine", "tts_engine"), ("xtts_lang", "xtts_lang_var"),
         ("xtts_voice", "xtts_speaker_var"), ("kokoro_voice", "kokoro_voice_var"),
         ("speed", "tts_speed"), ("pitch", "tts_pitch"), ("volume", "tts_volume"),
+        ("depth", "tts_depth"), ("vc_depth", "vc_depth"),
         ("curves_on", "tts_curves_on"),
         ("stt_engine", "stt_engine"), ("stt_lang", "stt_lang_var"),
         ("captions_lang", "captions_lang_var"), ("captions_format", "captions_format_var"),
@@ -841,6 +842,8 @@ class AIApp:
             put("tts_speed", "speed", lo=0.5, hi=2.0, kind=float)
             put("tts_pitch", "pitch", lo=-12.0, hi=12.0, kind=float)
             put("tts_volume", "volume", lo=0.0, hi=2.0, kind=float)
+            put("tts_depth", "depth", lo=-8.0, hi=8.0, kind=float)
+            put("vc_depth", "vc_depth", lo=-8.0, hi=8.0, kind=float)
             try:
                 cv = d.get("curves", {})
                 for k in ("speed", "pitch", "volume"):
@@ -1491,9 +1494,22 @@ class AIApp:
         self._value_entry(vol, self.tts_volume, 0.0, 2.0, 100.0, "{:.0f}", "%")
         self._btn(vol, "Reset", lambda: self.tts_volume.set(1.0),
                   color=SURFACE, padx=6).pack(side="left", padx=4)
+        # Depth: moves the voice's formants (body / throat size) WITHOUT
+        # changing the pitch. + = deeper, bigger body; - = lighter, smaller.
+        dep = tk.Frame(f, bg=CARD); dep.pack(fill="x", padx=2, pady=4)
+        self._label(dep, "Depth:").pack(side="left")
+        self.tts_depth = tk.DoubleVar(value=0.0)
+        ttk.Scale(dep, from_=-8.0, to=8.0, orient="horizontal",
+                  variable=self.tts_depth, length=200).pack(side="left", padx=6)
+        self._value_entry(dep, self.tts_depth, -8.0, 8.0, 1.0, "{:+.1f}", "")
+        self._btn(dep, "Reset", lambda: self.tts_depth.set(0.0),
+                  color=SURFACE, padx=6).pack(side="left", padx=4)
+        self._label(dep, "+ deeper / - lighter, pitch unchanged",
+                    fg=FG_DIM, font=("Segoe UI", 8)).pack(side="left", padx=4)
         self._fx_track(self.tts_speed, "speed")
         self._fx_track(self.tts_pitch, "pitch")
         self._fx_track(self.tts_volume, "volume")
+        self._fx_track(self.tts_depth, "depth")
 
         # Speed / pitch / volume curves (CapCut-style editor)
         self._curves = {"on": False, "smooth": True,
@@ -2068,8 +2084,19 @@ class AIApp:
         ttk.Scale(sc, from_=0.5, to=2.0, orient="horizontal",
                   variable=self.vc_speed, length=200).pack(side="left", padx=6)
         self._value_entry(sc, self.vc_speed, 0.5, 2.0, 100.0, "{:.0f}", "%")
+        dc = tk.Frame(f, bg=CARD); dc.pack(fill="x", padx=2, pady=3)
+        self._label(dc, "Depth:").pack(side="left")
+        self.vc_depth = tk.DoubleVar(value=0.0)
+        ttk.Scale(dc, from_=-8.0, to=8.0, orient="horizontal",
+                  variable=self.vc_depth, length=200).pack(side="left", padx=6)
+        self._value_entry(dc, self.vc_depth, -8.0, 8.0, 1.0, "{:+.1f}", "")
+        self._btn(dc, "Reset", lambda: self.vc_depth.set(0.0),
+                  color=SURFACE, padx=6).pack(side="left", padx=4)
+        self._label(dc, "+ deeper / - lighter (TTS pipeline mode only)",
+                    fg=FG_DIM, font=("Segoe UI", 8)).pack(side="left", padx=4)
         self._fx_track(self.vc_speed, "vc_speed")
         self._fx_track(self.vc_pitch, "vc_pitch")
+        self._fx_track(self.vc_depth, "vc_depth")
 
         # Pipeline mode
         pl = tk.Frame(f, bg=CARD); pl.pack(fill="x", padx=2, pady=3)
@@ -2487,7 +2514,7 @@ class AIApp:
                 shutil.copyfile(ref["path"], tmp.name)
             else:
                 self._tts_synth(self._tts_snapshot(sid), text, tmp.name)
-            fx = self._apply_tts_fx(tmp.name, "speed", "pitch", "volume")
+            fx = self._apply_tts_fx(tmp.name, "speed", "pitch", "volume", "depth")
             print(f"[AVS] Preview ready in {time.time()-t0:.1f}s -> {tmp.name}")
             if gen is not None and gen != getattr(self, "_preview_gen", gen):
                 print("[AVS] Preview was stopped while generating - not playing it")
@@ -2545,7 +2572,7 @@ class AIApp:
                 shutil.copyfile(ref["path"], out)
             else:
                 self._tts_synth(self._tts_snapshot(sid), text, out)
-            fx = self._apply_tts_fx(out, "speed", "pitch", "volume")
+            fx = self._apply_tts_fx(out, "speed", "pitch", "volume", "depth")
             print(f"[AVS] Saved in {time.time()-t0:.1f}s -> {out}")
             self.root.after(0, self._stop_loading)
             self.root.after(0, lambda: messagebox.showinfo("Saved!", f"Audio saved to:\n{out}\n\nEffects: {fx}"))
@@ -3500,8 +3527,8 @@ def _fx_track(self, var, key):
     it safely (calling .get() on a Tk variable off the main thread isn't)."""
     vals = self.__dict__.setdefault(
         "_fx_vals",
-        {"speed": 1.0, "pitch": 0.0, "volume": 1.0,
-         "vc_speed": 1.0, "vc_pitch": 0.0})
+        {"speed": 1.0, "pitch": 0.0, "volume": 1.0, "depth": 0.0,
+         "vc_speed": 1.0, "vc_pitch": 0.0, "vc_depth": 0.0})
     def _upd(*_):
         try:
             vals[key] = float(var.get())
@@ -3511,7 +3538,7 @@ def _fx_track(self, var, key):
     _upd()
 
 
-def _apply_tts_fx(self, path, speed_key, pitch_key, volume_key=None):
+def _apply_tts_fx(self, path, speed_key, pitch_key, volume_key=None, depth_key=None):
     """Apply speed/pitch/volume to the WAV at `path`. Sliders and curves are
     either/or: in Curves mode the slider values are ignored. Returns a short
     human-readable summary for the status line."""
@@ -3519,6 +3546,7 @@ def _apply_tts_fx(self, path, speed_key, pitch_key, volume_key=None):
     sp = vals.get(speed_key, 1.0)
     pt = vals.get(pitch_key, 0.0)
     vol = vals.get(volume_key, 1.0) if volume_key else 1.0
+    dp = vals.get(depth_key, 0.0) if depth_key else 0.0     # UI: + = deeper
     try:
         import audio_fx
         cv = None
@@ -3527,12 +3555,15 @@ def _apply_tts_fx(self, path, speed_key, pitch_key, volume_key=None):
             cv = {"smooth": c["smooth"], "speed": list(c["speed"]),
                   "pitch": list(c["pitch"]), "volume": list(c["volume"])}
             sp, pt, vol = 1.0, 0.0, 1.0      # curves replace the sliders
-        changed = audio_fx.apply_fx(path, sp, pt, curves=cv, volume=vol)
+        # formant_shift semitones are the opposite sign: deeper = formants DOWN
+        changed = audio_fx.apply_fx(path, sp, pt, curves=cv, volume=vol, depth=-dp)
+        dtxt = f", depth {dp:+.1f}" if abs(dp) >= 0.05 else ""
         if cv:
             text = ("curves applied" if changed
-                    else "curves ON but all flat - audio unchanged")
+                    else "curves ON but all flat - audio unchanged") + dtxt
         elif changed:
-            text = f"sliders: speed {sp:.2f}x, pitch {pt:+.1f} st, volume {vol*100:.0f}%"
+            text = (f"sliders: speed {sp:.2f}x, pitch {pt:+.1f} st, "
+                    f"volume {vol*100:.0f}%" + dtxt)
         else:
             text = "no effects (sliders at default)"
         print(f"[AVS] FX: {text}")
@@ -3973,7 +4004,7 @@ def _vc_pipeline(self):
                       f"tts={cfg['tts']} voice={cfg['voice']} chars={len(text)}",
                       flush=True)
                 self._vc_synth(cfg, text, tmp)
-                self._apply_tts_fx(tmp, "vc_speed", "vc_pitch")
+                self._apply_tts_fx(tmp, "vc_speed", "vc_pitch", None, "vc_depth")
                 t_spk = time.time()
                 print(f"[AVS] VC timing: queued {t0 - t_cap:.2f}s | "
                       f"hear {t_hear - t0:.2f}s | speak {t_spk - t_hear:.2f}s | "
