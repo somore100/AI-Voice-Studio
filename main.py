@@ -397,6 +397,17 @@ def _rewrite_config(key, value_repr, comment):
         with open(path, "w", encoding="utf-8") as f: f.writelines(lines)
     except Exception: pass
 
+def _settings_path():
+    """Per-user settings file (JSON) - never inside the app folder, so it
+    survives updates and works in the packaged builds."""
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or os.path.expanduser("~")
+    elif sys.platform == "darwin":
+        base = os.path.expanduser("~/Library/Application Support")
+    else:
+        base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return os.path.join(base, "AI Voice Studio", "settings.json")
+
 def persist_folder(v):    _rewrite_config("LAST_FOLDER",     f'r"{v}"',       "auto-updates on browse")
 def persist_favorites(v): _rewrite_config("SAVED_FAVORITES", repr(sorted(v)), "auto-updates when you star/unstar voices")
 
@@ -708,9 +719,163 @@ class AIApp:
         self._build_translator_frame()
         self._build_voice_changer_frame()
         self._build_footer()
+        try:
+            self._settings_load()
+        except Exception as e:
+            print(f"[AVS] could not restore settings: {e}")
 
         root.after(150, lambda: self._scroller.bind_all_mousewheel(self._inner))
         root.after(400, self._request_mic_permission)
+
+    # ---- saved settings (JSON in the user's config folder) -----------------
+    _SETTING_VARS = [
+        ("tts_engine", "tts_engine"), ("xtts_lang", "xtts_lang_var"),
+        ("xtts_voice", "xtts_speaker_var"), ("kokoro_voice", "kokoro_voice_var"),
+        ("speed", "tts_speed"), ("pitch", "tts_pitch"), ("volume", "tts_volume"),
+        ("curves_on", "tts_curves_on"),
+        ("stt_engine", "stt_engine"), ("stt_lang", "stt_lang_var"),
+        ("captions_lang", "captions_lang_var"), ("captions_format", "captions_format_var"),
+        ("tr_from", "tr_from_var"), ("tr_to", "tr_to_var"),
+        ("vc_pitch", "vc_pitch"), ("vc_speed", "vc_speed"), ("vc_mode", "vc_mode"),
+        ("vc_stt", "vc_stt_choice"), ("vc_lang", "vc_lang_var"),
+        ("vc_tts", "vc_tts_choice"), ("vc_voice", "vc_voice_var"),
+        ("vc_playback", "vc_playback"), ("vc_vmic", "vc_vmic"),
+        ("mic", "selected_mic"),
+    ]
+
+    def _settings_collect(self):
+        d = {"version": 1}
+        for key, attr in self._SETTING_VARS:
+            v = getattr(self, attr, None)
+            if v is None:
+                continue
+            try:
+                d[key] = v.get()
+            except Exception:
+                pass
+        try:
+            d["vctk_voice"] = self.get_selected_real_name()
+        except Exception:
+            pass
+        try:
+            d["curves"] = {k: [[float(x), float(y)] for x, y in self._curves[k]]
+                           for k in ("speed", "pitch", "volume")}
+            d["curves_smooth"] = bool(self._curves.get("smooth", True))
+        except Exception:
+            pass
+        return d
+
+    def _settings_save(self):
+        try:
+            path = _settings_path()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self._settings_collect(), f, indent=1)
+            os.replace(tmp, path)
+        except Exception as e:
+            print(f"[AVS] could not save settings: {e}")
+
+    def _settings_schedule(self, *_):
+        job = getattr(self, "_settings_job", None)
+        if job is not None:
+            try:
+                self.root.after_cancel(job)
+            except Exception:
+                pass
+        self._settings_job = self.root.after(800, self._settings_save)
+
+    def _settings_load(self):
+        try:
+            with open(_settings_path(), "r", encoding="utf-8") as f:
+                d = json.load(f)
+            if not isinstance(d, dict):
+                raise ValueError("not a settings object")
+        except FileNotFoundError:
+            d = {}
+        except Exception as e:
+            print(f"[AVS] ignoring unreadable settings file: {e}")
+            d = {}
+
+        def put(attr, key, allowed=None, lo=None, hi=None, kind=str):
+            var = getattr(self, attr, None)
+            if var is None or key not in d:
+                return
+            val = d[key]
+            try:
+                if kind is float:
+                    val = min(max(float(val), lo), hi)
+                elif kind is bool:
+                    val = bool(val)
+                else:
+                    val = str(val)
+                    if allowed is not None and val not in allowed:
+                        return
+                var.set(val)
+            except Exception:
+                pass
+
+        try:
+            from engines.coqui_xtts import PRESET_SPEAKERS as _xp
+        except Exception:
+            _xp = []
+        if d:
+            put("tts_engine", "tts_engine", [
+                "VCTK (English voices)", "XTTS-v2 (Multilingual)", "Kokoro (Fast, natural)"])
+            put("xtts_lang_var", "xtts_lang", XTTS_LANG_DISPLAY)
+            try:
+                put("xtts_speaker_var", "xtts_voice", TTS_ENGINES["xtts"].list_voices())
+            except Exception:
+                pass
+            try:
+                self._refresh_kokoro_voices()
+                put("kokoro_voice_var", "kokoro_voice", list(self._kokoro_map))
+            except Exception:
+                pass
+            name = d.get("vctk_voice")
+            for shown, real in getattr(self, "_voice_name_map", {}).items():
+                if real == name:
+                    self.speaker_dropdown.set(shown)
+                    break
+            put("tts_speed", "speed", lo=0.5, hi=2.0, kind=float)
+            put("tts_pitch", "pitch", lo=-12.0, hi=12.0, kind=float)
+            put("tts_volume", "volume", lo=0.0, hi=2.0, kind=float)
+            try:
+                cv = d.get("curves", {})
+                for k in ("speed", "pitch", "volume"):
+                    pts = [(float(x), float(y)) for x, y in cv[k]]
+                    if len(pts) >= 2 and all(0.0 <= x <= 1.0 for x, _ in pts):
+                        self._curves[k] = pts
+                self._curves["smooth"] = bool(d.get("curves_smooth", True))
+            except Exception:
+                pass
+            put("tts_curves_on", "curves_on", kind=bool)
+            put("stt_engine", "stt_engine", [
+                n for n, ok in (("Whisper (recommended)", WHISPER_AVAILABLE),
+                                ("Vosk (lightweight)", VOSK_AVAILABLE)) if ok])
+            put("stt_lang_var", "stt_lang", LANG_DISPLAY)
+            put("captions_lang_var", "captions_lang", LANG_DISPLAY)
+            put("captions_format_var", "captions_format", ["SRT", "VTT"])
+            put("tr_from_var", "tr_from", LANG_TR_FROM_DISPLAY)
+            put("tr_to_var", "tr_to", LANG_TR_DISPLAY)
+            put("vc_pitch", "vc_pitch", lo=-12.0, hi=12.0, kind=float)
+            put("vc_speed", "vc_speed", lo=0.5, hi=2.0, kind=float)
+            put("vc_mode", "vc_mode", ["Pitch only", "TTS pipeline (STT\u2192TTS)"])
+            put("vc_stt_choice", "vc_stt", [_VC_SAME_STT, "Whisper", "Vosk"])
+            put("vc_lang_var", "vc_lang", [_VC_SAME_LANG, _VC_AUTO_LANG] + LANG_DISPLAY)
+            put("vc_tts_choice", "vc_tts", [_VC_SAME_TTS, "VCTK (English voices)",
+                                            "XTTS-v2 (Multilingual)", "Kokoro (Fast, natural)"])
+            put("vc_voice_var", "vc_voice", list(getattr(self, "_vc_voice_map", {})) + list(_xp)
+                + ["Cloned voice (from Text-to-Speech tab)"])
+            put("vc_playback", "vc_playback", kind=bool)
+            if _vmic_available():
+                put("vc_vmic", "vc_vmic", kind=bool)
+            put("selected_mic", "mic", list(getattr(self, "mics_display", [])))
+        # from here on, any change is saved shortly after it happens
+        for _key, attr in self._SETTING_VARS:
+            v = getattr(self, attr, None)
+            if v is not None:
+                v.trace_add("write", self._settings_schedule)
 
     def _on_close_request(self):
         if self._download_in_progress:
@@ -722,6 +887,7 @@ class AIApp:
                 "Close anyway?")
             if not proceed:
                 return
+        self._settings_save()
         self._vmic_destroy()
         self.root.destroy()
 
@@ -993,6 +1159,62 @@ class AIApp:
             cb.pack(**pack_kw)
         return cb
 
+    def _value_entry(self, parent, var, lo, hi, scale, fmt, unit):
+        """A small box next to a slider: shows the value and lets you TYPE
+        an exact one (Enter or click away to apply; Esc cancels). The shown
+        number is var * scale (e.g. speed 1.5 -> 150 %). Out-of-range input
+        is clamped to the slider's range, junk reverts."""
+        sv = tk.StringVar()
+        st = {"dirty": False}
+        e = tk.Entry(parent, textvariable=sv, width=6, justify="right",
+                     bg=SURFACE, fg=CYAN, insertbackground=CYAN, relief="flat",
+                     font=("Segoe UI", 9, "bold"), highlightthickness=1,
+                     highlightbackground=BORDER, highlightcolor=CYAN)
+        e.pack(side="left", padx=(0, 0))
+        tk.Label(parent, text=unit, bg=CARD, fg=FG_DIM,
+                 font=("Segoe UI", 9)).pack(side="left", padx=(2, 0))
+
+        def show(*_):
+            if not st["dirty"]:
+                try:
+                    sv.set(fmt.format(var.get() * scale))
+                except (tk.TclError, ValueError):
+                    pass
+
+        def commit(_e=None):
+            txt = sv.get().strip().lower()
+            for junk in ("%", "x", "st", "semitones"):
+                txt = txt.replace(junk, "")
+            txt = txt.replace(",", ".").strip()
+            st["dirty"] = False
+            try:
+                v = min(max(float(txt) / scale, lo), hi)
+                var.set(v)
+            except ValueError:
+                pass
+            show()
+            return "break" if _e is not None and _e.keysym == "Return" else None
+
+        def cancel(_e=None):
+            st["dirty"] = False
+            show()
+            parent.focus_set()
+            return "break"
+
+        def on_key(ev):
+            if ev.keysym not in ("Return", "KP_Enter", "Escape", "Tab"):
+                st["dirty"] = True
+
+        e.bind("<KeyRelease>", on_key)
+        e.bind("<Return>", commit)
+        e.bind("<KP_Enter>", commit)
+        e.bind("<FocusOut>", commit)
+        e.bind("<Escape>", cancel)
+        e.bind("<FocusIn>", lambda ev: e.after_idle(lambda: e.selection_range(0, "end")))
+        var.trace_add("write", show)
+        show()
+        return e
+
     def _build_tts_frame(self):
         f = self._lf("Text-to-Speech")
         ob = tk.Frame(f, bg=CARD); ob.pack(fill="x", padx=2, pady=(0,4))
@@ -1098,11 +1320,7 @@ class AIApp:
         speed_slider = ttk.Scale(spd, from_=0.5, to=2.0, orient="horizontal",
                                   variable=self.tts_speed, length=200)
         speed_slider.pack(side="left", padx=6)
-        self._speed_label = tk.Label(spd, text="1.0x", bg=CARD, fg=CYAN,
-                                      font=("Segoe UI",9,"bold"), width=4)
-        self._speed_label.pack(side="left")
-        self.tts_speed.trace_add("write", lambda *_: self._speed_label.config(
-            text=f"{self.tts_speed.get():.1f}x"))
+        self._value_entry(spd, self.tts_speed, 0.5, 2.0, 100.0, "{:.0f}", "%")
         self._btn(spd, "Reset", lambda: self.tts_speed.set(1.0),
                   color=SURFACE, padx=6).pack(side="left", padx=4)
 
@@ -1113,11 +1331,7 @@ class AIApp:
         pitch_slider = ttk.Scale(pch, from_=-12.0, to=12.0, orient="horizontal",
                                  variable=self.tts_pitch, length=200)
         pitch_slider.pack(side="left", padx=6)
-        self._pitch_label = tk.Label(pch, text="+0.0", bg=CARD, fg=CYAN,
-                                     font=("Segoe UI",9,"bold"), width=5)
-        self._pitch_label.pack(side="left")
-        self.tts_pitch.trace_add("write", lambda *_: self._pitch_label.config(
-            text=f"{self.tts_pitch.get():+.1f}"))
+        self._value_entry(pch, self.tts_pitch, -12.0, 12.0, 1.0, "{:+.1f}", " st")
         self._btn(pch, "Reset", lambda: self.tts_pitch.set(0.0),
                   color=SURFACE, padx=6).pack(side="left", padx=4)
 
@@ -1128,11 +1342,7 @@ class AIApp:
         vol_slider = ttk.Scale(vol, from_=0.0, to=2.0, orient="horizontal",
                                variable=self.tts_volume, length=200)
         vol_slider.pack(side="left", padx=6)
-        self._volume_label = tk.Label(vol, text="100%", bg=CARD, fg=CYAN,
-                                      font=("Segoe UI",9,"bold"), width=5)
-        self._volume_label.pack(side="left")
-        self.tts_volume.trace_add("write", lambda *_: self._volume_label.config(
-            text=f"{self.tts_volume.get()*100:.0f}%"))
+        self._value_entry(vol, self.tts_volume, 0.0, 2.0, 100.0, "{:.0f}", "%")
         self._btn(vol, "Reset", lambda: self.tts_volume.set(1.0),
                   color=SURFACE, padx=6).pack(side="left", padx=4)
         self._fx_track(self.tts_speed, "speed")
@@ -1704,11 +1914,7 @@ class AIApp:
         self.vc_pitch = tk.DoubleVar(value=0.0)
         ttk.Scale(pc, from_=-12.0, to=12.0, orient="horizontal",
                   variable=self.vc_pitch, length=200).pack(side="left", padx=6)
-        self._vc_pitch_lbl = tk.Label(pc, text="0.0", bg=CARD, fg=CYAN,
-                                       font=("Segoe UI",9,"bold"), width=5)
-        self._vc_pitch_lbl.pack(side="left")
-        self.vc_pitch.trace_add("write", lambda *_: self._vc_pitch_lbl.config(
-            text=f"{self.vc_pitch.get():+.1f}"))
+        self._value_entry(pc, self.vc_pitch, -12.0, 12.0, 1.0, "{:+.1f}", " st")
         self._btn(pc, "Reset", lambda: self.vc_pitch.set(0.0),
                   color=SURFACE, padx=6).pack(side="left", padx=4)
 
@@ -1718,11 +1924,7 @@ class AIApp:
         self.vc_speed = tk.DoubleVar(value=1.0)
         ttk.Scale(sc, from_=0.5, to=2.0, orient="horizontal",
                   variable=self.vc_speed, length=200).pack(side="left", padx=6)
-        self._vc_speed_lbl = tk.Label(sc, text="1.0x", bg=CARD, fg=CYAN,
-                                       font=("Segoe UI",9,"bold"), width=5)
-        self._vc_speed_lbl.pack(side="left")
-        self.vc_speed.trace_add("write", lambda *_: self._vc_speed_lbl.config(
-            text=f"{self.vc_speed.get():.1f}x"))
+        self._value_entry(sc, self.vc_speed, 0.5, 2.0, 100.0, "{:.0f}", "%")
         self._fx_track(self.vc_speed, "vc_speed")
         self._fx_track(self.vc_pitch, "vc_pitch")
 
@@ -2138,6 +2340,11 @@ class AIApp:
         self._set_tts_status("Playing original (no effects)", GREEN)
 
     def preview_voice(self):
+        if getattr(self, "_preview_busy", False):
+            # one preview at a time: extra clicks while it is still being
+            # generated would otherwise queue up and play one after another
+            self._set_tts_status("Still generating - wait for it, or press Stop", YELLOW)
+            return
         text = self._get_text()
         if not text: return
         sid = None
@@ -2159,7 +2366,11 @@ class AIApp:
                 return
         self._start_loading("Loading model and generating speech...")
         self._set_tts_status("Generating preview...", YELLOW)
-        threading.Thread(target=self._do_preview, args=(text,sid), daemon=True).start()
+        self._preview_busy = True
+        self._preview_gen = getattr(self, "_preview_gen", 0) + 1
+        self._settings_schedule()
+        threading.Thread(target=self._do_preview,
+                         args=(text, sid, self._preview_gen), daemon=True).start()
 
     def _log_tts_job(self, text, sid, label):
         """Print what's actually happening to the terminal - engine,
@@ -2179,7 +2390,13 @@ class AIApp:
             print(f"[AVS] {label}: engine=VCTK voice={sid} chars={len(text)}")
         return time.time()
 
-    def _do_preview(self, text, sid):
+    def _do_preview(self, text, sid, gen=None):
+        try:
+            self._do_preview_inner(text, sid, gen)
+        finally:
+            self._preview_busy = False
+
+    def _do_preview_inner(self, text, sid, gen=None):
         t0 = self._log_tts_job(text, sid, "Preview")
         try:
             tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False); tmp.close()
@@ -2193,6 +2410,9 @@ class AIApp:
                 self._tts_synth(self._tts_snapshot(sid), text, tmp.name)
             fx = self._apply_tts_fx(tmp.name, "speed", "pitch", "volume")
             print(f"[AVS] Preview ready in {time.time()-t0:.1f}s -> {tmp.name}")
+            if gen is not None and gen != getattr(self, "_preview_gen", gen):
+                print("[AVS] Preview was stopped while generating - not playing it")
+                return
             pygame.mixer.music.load(tmp.name); pygame.mixer.music.play()
             self.root.after(0, self._stop_loading)
             _col = YELLOW if "FAILED" in fx else GREEN
@@ -2209,8 +2429,12 @@ class AIApp:
             self.root.after(0, lambda: self._set_tts_status("Error", RED))
 
     def stop_preview(self):
+        # bumping the counter makes a preview that is still being generated
+        # discard its audio instead of playing it when it finishes
+        self._preview_gen = getattr(self, "_preview_gen", 0) + 1
         pygame.mixer.music.stop(); self._stop_loading()
-        self._set_tts_status("Stopped", FG_DIM)
+        self._set_tts_status("Stopped" + (" (finishing the running job...)"
+                             if getattr(self, "_preview_busy", False) else ""), FG_DIM)
 
     def generate_voice(self):
         text = self._get_text()
