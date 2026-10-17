@@ -514,6 +514,7 @@ def open_editor(root, state, use_var, colors, hooks=None):
     btn(trow, "+", lambda: ctx.zoom(0.8, L + PLOT_W / 2), padx=9)
     btn(trow, "Fit", ctx.fit, padx=9)
     ttk.Checkbutton(trow, text="Snap to pauses", variable=ctx.snap_on).pack(side="left", padx=10)
+
     status.pack(side="left", padx=4)
 
     row = tk.Frame(body, bg=colors["card"])
@@ -532,6 +533,59 @@ def open_editor(root, state, use_var, colors, hooks=None):
                     value=False).pack(side="left", padx=(0, 8))
     ttk.Radiobutton(row, text="Use curves", variable=use_var,
                     value=True).pack(side="left")
+
+    # zoom readout on the right: "Zoom [ 250 ]%  2.1 s of 8.4 s" - type a number
+    # to set the zoom (100 % = the whole speech, centred on what you see now)
+    zinfo = tk.Label(row, bg=colors["card"], fg=colors["dim"], font=("Segoe UI", 9))
+    zinfo.pack(side="right", padx=(2, 0))
+    tk.Label(row, text="%", bg=colors["card"], fg=colors["dim"],
+             font=("Segoe UI", 9)).pack(side="right")
+    zsv = tk.StringVar()
+    zdirty = [False]
+    zent = tk.Entry(row, textvariable=zsv, width=6, justify="right", bg=colors["surface"],
+                    fg=colors["accent"], insertbackground=colors["accent"], relief="flat",
+                    font=("Segoe UI", 9, "bold"), highlightthickness=1,
+                    highlightbackground=colors["surface"], highlightcolor=colors["accent"])
+    zent.pack(side="right")
+    tk.Label(row, text="Zoom:", bg=colors["card"], fg=colors["fg"],
+             font=("Segoe UI", 9)).pack(side="right", padx=(8, 3))
+
+    def upd_zoom():
+        try:
+            if not zdirty[0]:
+                zsv.set(f"{100.0 / ctx.span():.0f}")
+            zinfo.config(text=(f"{ctx.span() * ctx.dur:.1f} s of {ctx.dur:.1f} s"
+                               if ctx.dur > 0 else ""))
+        except tk.TclError:
+            pass
+
+    def zoom_commit(_e=None):
+        zdirty[0] = False
+        try:
+            pct = float(zsv.get().strip().replace("%", "").replace(",", "."))
+            span = 1.0 / max(pct, 1.0) * 100.0
+            c = (ctx.v0 + ctx.v1) / 2.0
+            ctx.set_view(c - span / 2.0, c + span / 2.0)
+        except ValueError:
+            pass
+        upd_zoom()
+        return "break" if _e is not None and _e.keysym in ("Return", "KP_Enter") else None
+
+    def zoom_cancel(_e=None):
+        zdirty[0] = False
+        upd_zoom()
+        body.focus_set()
+        return "break"
+
+    zent.bind("<KeyRelease>", lambda e: zdirty.__setitem__(0, True) if e.keysym not in (
+        "Return", "KP_Enter", "Escape", "Tab") else None)
+    zent.bind("<Return>", zoom_commit)
+    zent.bind("<KP_Enter>", zoom_commit)
+    zent.bind("<FocusOut>", zoom_commit)
+    zent.bind("<Escape>", zoom_cancel)
+    zent.bind("<FocusIn>", lambda e: zent.after_idle(lambda: zent.select_range(0, "end")))
+    ctx.views.append(upd_zoom)
+    upd_zoom()
     info.pack(anchor="w", pady=(6, 0))
 
     btns = tk.Frame(body, bg=colors["card"])
