@@ -29,6 +29,7 @@ Shape the result after it is generated:
 * **Depth** - makes a voice deeper and bigger, or lighter and smaller, **without changing its pitch**
 * **Curve editor** - draw speed, pitch and volume curves over a zoomable waveform timeline with sentence markers, snap-to-pause, a zoom readout and a "play original" button, so you can slow down one sentence or lift the pitch on one word-sized stretch
 * Preview (one at a time), save to WAV
+* **Find a voice by traits** - tick Pitch / Brightness / Liveliness, drag the sliders, filter by gender and language, and the app ranks all your installed voices by how close they are (each voice is measured once, then remembered)
 
 ### 👂 Speech-to-Text and subtitles
 
@@ -99,6 +100,7 @@ Where things live: models are stored in `./models/` when you run from source (pa
 | `engines/` | The TTS engines (Kokoro, VCTK, XTTS-v2), model paths and downloads |
 | `audio_fx.py` | Speed, pitch, volume and depth processing, curve maths |
 | `curve_editor.py` | The curve editor window |
+| `voice_finder.py` | Voice measurements and the "find a voice by traits" window |
 | `live_pitch.py` | Real-time pitch shifter for the voice changer |
 | `subtitles.py` | Caption generation (SRT / VTT) |
 | `*.spec`, `build.py`, `build_appimage.sh`, `installer_public.iss` | Packaging for the three platforms |
@@ -114,7 +116,6 @@ Where things live: models are stored in `./models/` when you run from source (pa
 
 * A local API so other programs can request speech from the app
 * A faster voice changer (quicker speech recognition)
-* Choose a voice by traits instead of by name
 * Edit the speed or pitch of a selected piece of text
 * Virtual microphone for Windows and macOS
 

@@ -1387,6 +1387,8 @@ class AIApp:
                              "Kokoro (Fast, natural)"]
                      ).pack(side="left", padx=(4,10))
         self.tts_engine.trace_add("write", lambda *_: self._on_engine_change())
+        self._btn(eng, "Find voice by traits...", self._open_voice_finder,
+                  color=SURFACE, fg=CYAN, pady=2).pack(side="right")
 
         self._xtts_lang_frame = tk.Frame(eng, bg=CARD)
         self._label(self._xtts_lang_frame, "Language:").pack(side="left")
@@ -1610,6 +1612,65 @@ class AIApp:
 
     def _kokoro_voice_arg(self):
         return self._kokoro_map.get(self.kokoro_voice_var.get())
+
+    # ---- voice finder (voice_finder.py) ----------------------------------
+    def _open_voice_finder(self):
+        win = getattr(self, "_vf_win", None)
+        try:
+            if win is not None and win.win.winfo_exists():
+                win.win.lift(); win._reload_catalog(); return
+        except Exception:
+            pass
+        import voice_finder
+        theme = dict(BG=BG, CARD=CARD, SURFACE=SURFACE, FG=FG, FG_DIM=FG_DIM,
+                     BLUE=BLUE, GREEN=GREEN, RED=RED, PURPLE=PURPLE)
+        cache = os.path.join(os.path.dirname(_settings_path()), "voice_traits.json")
+        self._vf_win = voice_finder.VoiceFinder(self, theme, cache)
+
+    def _vf_catalog(self):
+        """Every installed voice as a dict for the voice finder."""
+        from voice_finder import KOKORO_LANG
+        out = []
+        def installed(k):
+            try: return bool(TTS_ENGINES[k].is_installed())
+            except Exception: return False
+        if installed("vctk"):
+            for name, (sid, g) in SPEAKER_MAP.items():
+                out.append(dict(key=f"vctk:{sid}", engine="vctk", voice=sid,
+                                label=disp(name, sid), gender=g, lang="en"))
+        if installed("kokoro"):
+            from engines.kokoro import describe_voice
+            try: ids = TTS_ENGINES["kokoro"].list_voices()
+            except Exception: ids = []
+            for vid in ids:
+                out.append(dict(key=f"kokoro:{vid}", engine="kokoro", voice=vid,
+                                label=f"{vid}  -  {describe_voice(vid)}",
+                                gender={"f": "F", "m": "M"}.get(vid[1:2]),
+                                lang=KOKORO_LANG.get(vid[:1], "en")))
+        if installed("xtts"):
+            for name in TTS_ENGINES["xtts"].list_voices():
+                out.append(dict(key=f"xtts:{name}", engine="xtts", voice=name,
+                                label=name, gender=None, lang="*"))
+        return out
+
+    def _vf_apply(self, engine, voice):
+        """Select a voice found by the voice finder in the TTS tab."""
+        if engine == "vctk":
+            self.tts_engine.set("VCTK (English voices)")
+            self.gender_filter.set("All"); self.refresh_voice_list()
+            name = next((n for n, (sid, _g) in SPEAKER_MAP.items() if sid == voice), None)
+            d = next((k for k, v in self._voice_name_map.items() if v == name), None)
+            if d: self.speaker_dropdown.set(d)
+        elif engine == "kokoro":
+            self.tts_engine.set("Kokoro (Fast, natural)")
+            self._refresh_kokoro_voices()
+            d = next((k for k, v in self._kokoro_map.items() if v == voice), None)
+            if d: self.kokoro_voice_var.set(d)
+        else:
+            self.tts_engine.set("XTTS-v2 (Multilingual)")
+            self._clear_xtts_clone()
+            self.xtts_speaker_var.set(voice)
+        self._set_tts_status(f"Voice set to {voice}", GREEN)
 
     def _on_engine_change(self):
         key = self._engine_key()
