@@ -105,8 +105,8 @@ except Exception as _e:
 # ──────────────────────────────────────────────────────────────
 #  PERSISTENT CONFIG
 # ──────────────────────────────────────────────────────────────
-LAST_FOLDER     = r"C:/Users/Dominik Žibert/Documents/ai_voice/audio"  # auto-updates on browse
-SAVED_FAVORITES = ['Adam', 'Emma', 'Ivy']  # auto-updates when you star/unstar voices
+LAST_FOLDER     = ""  # overridden by prefs.json (updates on browse)
+SAVED_FAVORITES = ['Adam', 'Emma', 'Ivy']  # default; overridden by prefs.json
 
 # ──────────────────────────────────────────────────────────────
 #  MODEL PATHS
@@ -385,18 +385,8 @@ SPEAKER_MAP = {
 def disp(name, sid): return f"{name} ({sid})"
 
 # ──────────────────────────────────────────────────────────────
-#  SELF-WRITING CONFIG
+#  PREFS (folder, favourites)
 # ──────────────────────────────────────────────────────────────
-def _rewrite_config(key, value_repr, comment):
-    try:
-        path = os.path.realpath(__file__)
-        with open(path, "r", encoding="utf-8") as f: lines = f.readlines()
-        for i, line in enumerate(lines):
-            if line.startswith(f"{key} ="):
-                lines[i] = f"{key} = {value_repr}  # {comment}\n"; break
-        with open(path, "w", encoding="utf-8") as f: f.writelines(lines)
-    except Exception: pass
-
 def _settings_path():
     """Per-user settings file (JSON) - never inside the app folder, so it
     survives updates and works in the packaged builds."""
@@ -408,8 +398,35 @@ def _settings_path():
         base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
     return os.path.join(base, "AI Voice Studio", "settings.json")
 
-def persist_folder(v):    _rewrite_config("LAST_FOLDER",     f'r"{v}"',       "auto-updates on browse")
-def persist_favorites(v): _rewrite_config("SAVED_FAVORITES", repr(sorted(v)), "auto-updates when you star/unstar voices")
+def _prefs_path():
+    return os.path.join(os.path.dirname(_settings_path()), "prefs.json")
+
+def _prefs_load():
+    try:
+        with open(_prefs_path(), "r", encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+def _prefs_set(key, value):
+    """Small separate file for output folder + favourites (the main settings
+    file is rewritten wholesale from the UI variables)."""
+    try:
+        d = _prefs_load(); d[key] = value
+        path = _prefs_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f: json.dump(d, f, indent=1)
+        os.replace(tmp, path)
+    except Exception: pass
+
+def persist_folder(v):    _prefs_set("last_folder", v)
+def persist_favorites(v): _prefs_set("favorites", sorted(v))
+
+_P = _prefs_load()
+if isinstance(_P.get("last_folder"), str): LAST_FOLDER = _P["last_folder"]
+if isinstance(_P.get("favorites"), list):  SAVED_FAVORITES = [str(x) for x in _P["favorites"]]
 
 # ──────────────────────────────────────────────────────────────
 #  AUTO-DETECT MICROPHONE
