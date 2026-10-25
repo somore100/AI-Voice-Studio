@@ -243,7 +243,26 @@ except ImportError:
 # below instead of the old get_tts_vctk()/get_tts_xtts() functions that
 # used to be here.
 _whisper_model = None
+_fwhisper_model = None
 _vosk_models   = {}
+
+try:
+    import faster_whisper  # noqa: F401  (optional: ~3-4x faster Whisper on CPU)
+    FASTER_WHISPER_AVAILABLE = True
+except Exception:
+    FASTER_WHISPER_AVAILABLE = False
+_VC_FW = "Whisper (fast)"
+
+def get_fwhisper_model():
+    """faster-whisper 'small' (int8, CPU). Downloads once into the models folder."""
+    global _fwhisper_model
+    if _fwhisper_model is None:
+        from faster_whisper import WhisperModel
+        _fwhisper_model = WhisperModel(
+            "small", device="cpu", compute_type="int8",
+            cpu_threads=max(2, (os.cpu_count() or 4) - 1),
+            download_root=os.path.join(WHISPER_MODEL_DIR, "faster-whisper"))
+    return _fwhisper_model
 
 def get_whisper_model():
     global _whisper_model
@@ -736,6 +755,7 @@ class AIApp:
         self._build_captions_frame()
         self._build_translator_frame()
         self._build_voice_changer_frame()
+        self._build_api_frame()
         self._build_footer()
         try:
             self._settings_load()
@@ -882,7 +902,7 @@ class AIApp:
             put("vc_pitch", "vc_pitch", lo=-12.0, hi=12.0, kind=float)
             put("vc_speed", "vc_speed", lo=0.5, hi=2.0, kind=float)
             put("vc_mode", "vc_mode", ["Pitch only", "TTS pipeline (STT\u2192TTS)"])
-            put("vc_stt_choice", "vc_stt", [_VC_SAME_STT, "Whisper", "Vosk"])
+            put("vc_stt_choice", "vc_stt", [_VC_SAME_STT, "Whisper", "Vosk"] + ([_VC_FW] if FASTER_WHISPER_AVAILABLE else []))
             put("vc_lang_var", "vc_lang", [_VC_SAME_LANG, _VC_AUTO_LANG] + LANG_DISPLAY)
             put("vc_tts_choice", "vc_tts", [_VC_SAME_TTS, "VCTK (English voices)",
                                             "XTTS-v2 (Multilingual)", "Kokoro (Fast, natural)"])
@@ -909,6 +929,10 @@ class AIApp:
             if not proceed:
                 return
         self._settings_save()
+        try:
+            self._api_stop()
+        except Exception:
+            pass
         self._vmic_destroy()
         self.root.destroy()
 
@@ -1556,6 +1580,25 @@ class AIApp:
         self.tts_curves_on.trace_add("write", _sync_fx_mode)
         _sync_fx_mode()
 
+        # Extra speed / pitch for just the text selected in the box above
+        sel = tk.Frame(f, bg=CARD); sel.pack(fill="x", padx=2, pady=4)
+        self.tts_sel_on = tk.BooleanVar(value=False)
+        ttk.Checkbutton(sel, text="Selected text only:",
+                        variable=self.tts_sel_on).pack(side="left")
+        self.tts_sel_speed = tk.DoubleVar(value=1.0)
+        self._label(sel, "Speed").pack(side="left", padx=(8, 0))
+        ttk.Scale(sel, from_=0.5, to=2.0, orient="horizontal",
+                  variable=self.tts_sel_speed, length=90).pack(side="left", padx=4)
+        self._value_entry(sel, self.tts_sel_speed, 0.5, 2.0, 100.0, "{:.0f}", "%")
+        self.tts_sel_pitch = tk.DoubleVar(value=0.0)
+        self._label(sel, "Pitch").pack(side="left", padx=(8, 0))
+        ttk.Scale(sel, from_=-12.0, to=12.0, orient="horizontal",
+                  variable=self.tts_sel_pitch, length=90).pack(side="left", padx=4)
+        self._value_entry(sel, self.tts_sel_pitch, -12.0, 12.0, 1.0, "{:+.1f}", " st")
+        self._label(f, "Select words in the text box; only they get this extra speed / pitch "
+                       "(Sliders mode).", fg=FG_DIM,
+                    font=("Segoe UI", 8)).pack(anchor="w", padx=4)
+
         fldr = tk.Frame(f, bg=CARD); fldr.pack(fill="x", padx=2, pady=4)
         self._label(fldr, "Save to:").pack(side="left")
         self.save_path_var = tk.StringVar(
@@ -2189,7 +2232,7 @@ class AIApp:
         self._label(r1, "Hear with:").pack(side="left")
         self.vc_stt_choice = tk.StringVar(value=_VC_SAME_STT)
         ttk.Combobox(r1, textvariable=self.vc_stt_choice, state="readonly",
-                     values=[_VC_SAME_STT, "Whisper", "Vosk"], width=26,
+                     values=[_VC_SAME_STT, "Whisper", "Vosk"] + ([_VC_FW] if FASTER_WHISPER_AVAILABLE else []), width=26,
                      font=("Segoe UI",9)).pack(side="left", padx=6)
 
         r1b = tk.Frame(f, bg=CARD); r1b.pack(fill="x", padx=2, pady=3)
@@ -2229,15 +2272,21 @@ class AIApp:
         ttk.Checkbutton(r3, text="Playback (hear it yourself)",
                         variable=self.vc_playback).pack(side="left")
         if _vmic_available():
-            _hint = ("Call app: choose \"" + _VMIC_LABEL + "\" as the microphone "
+            _lbl = (_VMIC_LABEL if sys.platform.startswith("linux")
+                    else "the virtual cable's input device (CABLE Output / BlackHole)")
+            _hint = ("Call app: choose \"" + _lbl + "\" as the microphone "
                      "(keep your real mic selected above). Use headphones with "
                      "Playback on.")
         elif sys.platform.startswith("linux"):
             _hint = ("Virtual mic needs 'pactl' and 'paplay' (package "
                      "pulseaudio-utils). Playback only until installed.")
+        elif sys.platform in _VMIC_CABLE:
+            _n, _u = _VMIC_CABLE[sys.platform]
+            _hint = (f"Virtual mic needs {_n} ({_u}). Install it, restart the "
+                     f"app, then pick its output as the microphone in your call app.")
         else:
-            _hint = ("Virtual microphone is Linux-only for now. Playback "
-                     "plays on your speakers.")
+            _hint = ("Virtual microphone is not supported on this system. "
+                     "Playback plays on your speakers.")
         self._label(f, _hint, fg=FG_DIM, font=("Segoe UI",8)).pack(
             anchor="w", padx=4)
 
@@ -2406,6 +2455,58 @@ class AIApp:
         else:
             TTS_ENGINES[key].synthesize(text, voice, out)
 
+    def _sel_capture(self):
+        """Main thread: remember the selected text span and its extra
+        speed / pitch for the next Preview or Save (None = not in use)."""
+        self._sel_job = None
+        try:
+            if not self.tts_sel_on.get() or self._curves.get("on"):
+                return
+            sp = float(self.tts_sel_speed.get())
+            pt = float(self.tts_sel_pitch.get())
+            if abs(sp - 1.0) < 0.01 and abs(pt) < 0.05:
+                return
+            rng = self.text_entry.tag_ranges("sel")
+            if not rng:
+                return
+            full = self.text_entry.get("1.0", "end-1c")
+            a = len(self.text_entry.get("1.0", rng[0]))
+            b = len(self.text_entry.get("1.0", rng[1]))
+            parts = (full[:a].strip(), full[a:b].strip(), full[b:].strip())
+            if parts[1]:
+                self._sel_job = (full.strip(), parts, sp, pt)
+        except Exception:
+            traceback.print_exc()
+
+    def _tts_synth_sel(self, snap, text, out):
+        """Like _tts_synth, but the selected span gets its own speed/pitch."""
+        job = getattr(self, "_sel_job", None)
+        if not job or job[0] != text:
+            return self._tts_synth(snap, text, out)
+        import audio_fx
+        _full, parts, sp, pt = job
+        pieces, sr0 = [], None
+        for i, part in enumerate(parts):
+            if not part:
+                continue
+            tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False); tmp.close()
+            try:
+                self._tts_synth(snap, part, tmp.name)
+                if i == 1:
+                    audio_fx.apply_fx(tmp.name, sp, pt)
+                y, sr = audio_fx.load_wav_mono(tmp.name)
+            finally:
+                try: os.remove(tmp.name)
+                except OSError: pass
+            if sr0 is None:
+                sr0 = sr
+            elif sr != sr0:
+                import librosa
+                y = librosa.resample(y, orig_sr=sr, target_sr=sr0)
+            pieces.append(y)
+        y, _spans = audio_fx.stitch(pieces, sr0, gap_s=0.1)
+        audio_fx.write_wav(out, y, sr0)
+
     # ---- timeline reference (curve editor) ------------------------------
     def _get_timed_ref(self, text, snap, progress=None):
         """Synthesize `text` one sentence at a time and stitch the pieces,
@@ -2550,6 +2651,7 @@ class AIApp:
                 return
         self._start_loading("Loading model and generating speech...")
         self._set_tts_status("Generating preview...", YELLOW)
+        self._sel_capture()
         self._preview_busy = True
         self._preview_gen = getattr(self, "_preview_gen", 0) + 1
         self._settings_schedule()
@@ -2591,7 +2693,7 @@ class AIApp:
                 ref = self._get_timed_ref(text, self._tts_snapshot(sid))
                 shutil.copyfile(ref["path"], tmp.name)
             else:
-                self._tts_synth(self._tts_snapshot(sid), text, tmp.name)
+                self._tts_synth_sel(self._tts_snapshot(sid), text, tmp.name)
             fx = self._apply_tts_fx(tmp.name, "speed", "pitch", "volume", "depth")
             print(f"[AVS] Preview ready in {time.time()-t0:.1f}s -> {tmp.name}")
             if gen is not None and gen != getattr(self, "_preview_gen", gen):
@@ -2638,6 +2740,7 @@ class AIApp:
                 return
         out = self.get_next_filename()
         if not out: return
+        self._sel_capture()
         self._start_loading("Generating and saving audio...")
         self._set_tts_status("Saving audio...", YELLOW)
         threading.Thread(target=self._do_save, args=(text,sid,out), daemon=True).start()
@@ -2649,7 +2752,7 @@ class AIApp:
                 ref = self._get_timed_ref(text, self._tts_snapshot(sid))
                 shutil.copyfile(ref["path"], out)
             else:
-                self._tts_synth(self._tts_snapshot(sid), text, out)
+                self._tts_synth_sel(self._tts_snapshot(sid), text, out)
             fx = self._apply_tts_fx(out, "speed", "pitch", "volume", "depth")
             print(f"[AVS] Saved in {time.time()-t0:.1f}s -> {out}")
             self.root.after(0, self._stop_loading)
@@ -3679,8 +3782,75 @@ def _ext_env():
     return env
 
 
+# Windows / macOS cannot create a virtual device from an app: the user installs
+# a virtual audio cable once (VB-Cable / BlackHole) and we play into it.
+_VMIC_CABLE = {"win32": ("CABLE Input", "https://vb-audio.com/Cable/"),
+               "darwin": ("BlackHole", "https://existential.audio/blackhole/")}
+
+
+def _vmic_cable_device():
+    """(PyAudio output device index, name) of the installed virtual cable, or None."""
+    key = _VMIC_CABLE.get(sys.platform)
+    if not key:
+        return None
+    try:
+        import pyaudio
+        pa = pyaudio.PyAudio()
+        try:
+            for i in range(pa.get_device_count()):
+                d = pa.get_device_info_by_index(i)
+                if d.get("maxOutputChannels", 0) > 0 and key[0].lower() in d["name"].lower():
+                    return i, d["name"]
+        finally:
+            pa.terminate()
+    except Exception:
+        pass
+    return None
+
+
+class _CablePlayer:
+    """Plays a WAV into the virtual cable; poll()/terminate() like a Popen."""
+    def __init__(self, path, dev_index):
+        self._stop = False
+        self._done = False
+        threading.Thread(target=self._run, args=(path, dev_index), daemon=True).start()
+
+    def _run(self, path, dev_index):
+        try:
+            import pyaudio
+            import audio_fx
+            import numpy as np
+            y, sr_ = audio_fx.load_wav_mono(path)
+            pa = pyaudio.PyAudio()
+            try:
+                st = pa.open(format=pyaudio.paInt16, channels=1, rate=sr_, output=True,
+                             output_device_index=dev_index)
+                pcm = (np.clip(y, -1, 1) * 32767).astype(np.int16).tobytes()
+                for i in range(0, len(pcm), 4096):
+                    if self._stop:
+                        break
+                    st.write(pcm[i:i + 4096])
+                st.stop_stream(); st.close()
+            finally:
+                pa.terminate()
+        except Exception as e:
+            print(f"[AVS] virtual mic playback failed: {e!r}", flush=True)
+        finally:
+            self._done = True
+
+    def poll(self):
+        return 0 if self._done else None
+
+    def terminate(self):
+        self._stop = True
+
+
 def _vmic_tools():
-    """(pactl, player) if a virtual mic can be used here, else None."""
+    """Truthy if a virtual mic can be used here, else None. Linux:
+    (pactl, player). Windows / macOS: ("cable", device index)."""
+    if sys.platform in _VMIC_CABLE:
+        dev = _vmic_cable_device()
+        return ("cable", dev[0]) if dev else None
     if not sys.platform.startswith("linux"):
         return None
     pactl = shutil.which("pactl")
@@ -3706,6 +3876,12 @@ def _vmic_create(self):
     """Create the virtual mic (a null sink plus a source that appears as a
     real microphone). Returns (ok, message)."""
     tools = _vmic_tools()
+    if tools and tools[0] == "cable":
+        return True, "ready"
+    if not tools and sys.platform in _VMIC_CABLE:
+        name, url = _VMIC_CABLE[sys.platform]
+        return False, (f"No virtual audio cable found. Install {name} ({url}), "
+                       f"restart the app, then try again.")
     if not tools:
         return False, ("The virtual microphone needs 'pactl' and 'paplay' "
                        "(package pulseaudio-utils; Fedora: sudo dnf install "
@@ -3741,7 +3917,7 @@ def _vmic_create(self):
 
 def _vmic_destroy(self):
     tools = _vmic_tools()
-    if not tools:
+    if not tools or tools[0] == "cable":
         return
     for mid in getattr(self, "_vmic_modules", []):
         try:
@@ -3752,7 +3928,10 @@ def _vmic_destroy(self):
 
 
 def _vmic_play(self, path):
-    player = _vmic_tools()[1]
+    tools = _vmic_tools()
+    if tools[0] == "cable":
+        return _CablePlayer(path, tools[1])
+    player = tools[1]
     if os.path.basename(player) == "pw-play":
         cmd = [player, f"--target={_VMIC_SINK}", path]
     else:
@@ -3793,7 +3972,8 @@ def _vc_resolve(self):
     auto_lang = lang_choice == _VC_AUTO_LANG
     if lang_choice not in (_VC_SAME_LANG, _VC_AUTO_LANG) and lang_choice in LANG_WHISPER:
         lang_disp = lang_choice
-    cfg = {"stt": "vosk" if stt.startswith("Vosk") else "whisper",
+    cfg = {"stt": "vosk" if stt.startswith("Vosk") else
+                  ("fwhisper" if stt == _VC_FW and FASTER_WHISPER_AVAILABLE else "whisper"),
            "wlang": None if auto_lang else LANG_WHISPER.get(lang_disp),
            "vlang": LANG_VOSK.get(lang_disp),
            "lang_name": "auto" if auto_lang else lang_disp,
@@ -3811,6 +3991,8 @@ def _vc_resolve(self):
         if not cfg["vlang"] or not _vosk_model_ok(
                 os.path.join(VOSK_MODEL_DIR, cfg["vlang"])):
             return None, ("vosk-missing", cfg["vlang"] or "?")
+    elif cfg["stt"] == "fwhisper":
+        pass
     elif not WHISPER_AVAILABLE:
         return None, ("msg", "Whisper is not installed.")
 
@@ -4033,6 +4215,17 @@ def _vc_pipeline(self):
             from vosk import KaldiRecognizer as _vrec_cls
             st(f"Loading Vosk ({cfg['vlang']})...", YELLOW)
             _vosk = get_vosk_model(cfg["vlang"])
+        elif cfg["stt"] == "fwhisper":
+            st("Loading fast Whisper (first run downloads ~460 MB)...", YELLOW)
+            _fw = get_fwhisper_model()
+            # Warm-up pass: the first real transcribe otherwise pays one-time
+            # setup cost (thread pool, allocations) on the user's first phrase.
+            try:
+                st("Warming up...", YELLOW)
+                _silence = np.zeros(8000, dtype=np.float32)
+                list(_fw.transcribe(_silence, beam_size=1, without_timestamps=True)[0])
+            except Exception as _e:
+                print(f"[AVS] VC warm-up skipped: {_e!r}", flush=True)
         else:
             st("Loading Whisper...", YELLOW)
             get_whisper_model()
@@ -4060,6 +4253,15 @@ def _vc_pipeline(self):
                     for _i in range(0, len(pcm), 8000):
                         rec.AcceptWaveform(pcm[_i:_i + 8000])
                     text = json.loads(rec.FinalResult()).get("text", "").strip()
+                elif cfg["stt"] == "fwhisper":
+                    raw = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+                    segs, info = get_fwhisper_model().transcribe(
+                        raw, language=cfg.get("wlang") or None, beam_size=1,
+                        temperature=0.0, condition_on_previous_text=False,
+                        without_timestamps=True)
+                    text = "".join(sg.text for sg in segs).strip()
+                    if not cfg.get("wlang"):
+                        lang_used = "auto->" + str(info.language)
                 else:
                     raw = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
                     kw = {"language": cfg["wlang"]} if cfg.get("wlang") else {}
@@ -4087,7 +4289,7 @@ def _vc_pipeline(self):
                 print(f"[AVS] VC timing: queued {t0 - t_cap:.2f}s | "
                       f"hear {t_hear - t0:.2f}s | speak {t_spk - t_hear:.2f}s | "
                       f"from end of your phrase to sound: {t_spk - t_cap:.2f}s "
-                      f"(+~0.55s silence wait before that)", flush=True)
+                      f"(+~0.4s silence wait before that)", flush=True)
                 self._vc_speaking = True
                 self._vc_speak_seq += 1
                 try:
@@ -4112,8 +4314,8 @@ def _vc_pipeline(self):
     threading.Thread(target=worker, daemon=True).start()
 
     rec = self.recognizer
-    rec.pause_threshold = 0.55          # end of phrase after 0.55 s silence
-    rec.non_speaking_duration = 0.35
+    rec.pause_threshold = 0.4           # end of phrase after ~0.4 s silence
+    rec.non_speaking_duration = 0.3
     mic_idx = self._resolve_mic_index()
     while alive():
         try:
@@ -4197,6 +4399,250 @@ AIApp._download_one          = _download_one
 AIApp._do_download_one       = _do_download_one
 AIApp._do_download_model     = _do_download_model
 AIApp._ensure_engine_tos      = _ensure_engine_tos
+
+
+# ──────────────────────────────────────────────────────────────
+#  LOCAL API SERVER (api_server.py) - lets other programs use our models
+# ──────────────────────────────────────────────────────────────
+class _ApiBackend:
+    """Runs API requests on server threads (never touches Tk)."""
+    def __init__(self, app):
+        self.app = app
+
+    def _installed(self, key):
+        try:
+            return bool(TTS_ENGINES[key].is_installed())
+        except Exception:
+            return False
+
+    def models(self):
+        tts = [k for k in ("kokoro", "vctk", "xtts") if k in TTS_ENGINES and self._installed(k)]
+        stt = []
+        if WHISPER_AVAILABLE or FASTER_WHISPER_AVAILABLE:
+            stt.append("whisper-1")
+        if VOSK_AVAILABLE:
+            stt.append("vosk")
+        return {"tts": tts, "stt": stt}
+
+    def voices(self):
+        return self.app._vf_catalog()
+
+    def tts(self, text, model, voice, language, speed, pitch, volume, depth):
+        import api_server
+        installed = [k for k in ("kokoro", "vctk", "xtts") if self._installed(k)]
+        if not installed:
+            raise api_server.ApiError(503, "No TTS engine is installed. Download one in Models & Setup.")
+        v = str(voice or "").strip()
+        key = None
+        if ":" in v and v.split(":", 1)[0].lower() in TTS_ENGINES:
+            key, v = v.split(":", 1)[0].lower(), v.split(":", 1)[1]
+        m = str(model or "").strip().lower()
+        if key is None:
+            key = next((k for k in TTS_ENGINES if m == k or (m and m.startswith(k))), None)
+        if key is None:
+            key = installed[0]                       # tts-1, tts-1-hd, unknown -> default
+        if key not in installed:
+            raise api_server.ApiError(404, f"Engine '{key}' is not installed.")
+        if key == "xtts":
+            if not _engine_tos_already_agreed("xtts"):
+                raise api_server.ApiError(403, "Use XTTS once in the app and accept its license first.")
+            os.environ["COQUI_TOS_AGREED"] = "1"
+        ids = list(TTS_ENGINES[key].list_voices() or [])
+        sel = None
+        if v:
+            low = v.lower()
+            sel = next((i for i in ids if i.lower() == low), None)
+            if sel is None and key == "vctk":
+                for name, (sid, _g) in SPEAKER_MAP.items():
+                    if low in (name.lower(), disp(name, sid).lower()):
+                        sel = sid
+                        break
+            if sel is None and key == "kokoro":
+                sel = next((i for i in ids if i.lower().startswith(low)), None)
+            if sel is None and key == "xtts" and low.startswith("clone:"):
+                sel = CLONE_PREFIX + v[6:]
+        if sel is None:
+            if key == "kokoro":
+                sel = "af_heart" if "af_heart" in ids else (ids[0] if ids else None)
+            else:
+                sel = ids[0] if ids else None
+        lang = None
+        if key == "xtts":
+            l = str(language or "en").strip()
+            l = LANG_XTTS.get(l.title(), l.lower())
+            lang = l if l in XTTS_SUPPORTED else "en"
+        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False); tmp.close()
+        try:
+            if key == "xtts":
+                TTS_ENGINES[key].synthesize(text, sel, tmp.name, lang)
+            else:
+                TTS_ENGINES[key].synthesize(text, sel, tmp.name)
+            import audio_fx
+            audio_fx.apply_fx(tmp.name, speed, pitch, volume=volume, depth=-depth)
+        except Exception:
+            try: os.remove(tmp.name)
+            except OSError: pass
+            raise
+        return tmp.name
+
+    def stt(self, wav_path, model, language, translate):
+        import api_server
+        import numpy as np
+        import soundfile as sf
+        raw, _sr = sf.read(wav_path, dtype="float32")
+        m = str(model or "").lower()
+        lang = (language or "").strip().lower() or None
+        if m.startswith("vosk") and not translate:
+            if not VOSK_AVAILABLE:
+                raise api_server.ApiError(503, "Vosk is not installed.")
+            vmap = {l[1]: l[2] for l in LANGUAGES}
+            vlang = vmap.get(lang or "en")
+            if not vlang or not _vosk_model_ok(os.path.join(VOSK_MODEL_DIR, vlang)):
+                raise api_server.ApiError(404, f"No Vosk model for language '{lang or 'en'}'.")
+            from vosk import KaldiRecognizer
+            rec = KaldiRecognizer(get_vosk_model(vlang), 16000)
+            pcm = (np.clip(raw, -1, 1) * 32767).astype(np.int16).tobytes()
+            for i in range(0, len(pcm), 8000):
+                rec.AcceptWaveform(pcm[i:i + 8000])
+            text = json.loads(rec.FinalResult()).get("text", "").strip()
+            return {"text": text, "language": vlang, "segments": []}
+        task = "translate" if translate else "transcribe"
+        if FASTER_WHISPER_AVAILABLE:
+            segs, info = get_fwhisper_model().transcribe(
+                raw, language=lang, task=task, beam_size=1, temperature=0.0,
+                condition_on_previous_text=False)
+            segs = [{"start": float(s.start), "end": float(s.end), "text": s.text} for s in segs]
+            return {"text": "".join(s["text"] for s in segs).strip(),
+                    "language": info.language, "segments": segs}
+        if not WHISPER_AVAILABLE:
+            raise api_server.ApiError(503, "Whisper is not installed.")
+        kw = {"language": lang} if lang else {}
+        res = get_whisper_model().transcribe(
+            raw, fp16=False, temperature=0.0, condition_on_previous_text=False,
+            task=task, **kw)
+        segs = [{"start": float(s["start"]), "end": float(s["end"]), "text": s["text"]}
+                for s in res.get("segments", [])]
+        return {"text": res["text"].strip(), "language": res.get("language"), "segments": segs}
+
+
+def _build_api_frame(self):
+    f = self._lf("Local API (for other programs)", fg_title=CYAN)
+    info = tk.Frame(f, bg=CARD); info.pack(fill="x", padx=2, pady=(0, 6))
+    tk.Label(info, text="OPTIONAL", bg=CARD, fg=YELLOW,
+             font=("Segoe UI", 8, "bold")).pack(side="left")
+    self._label(info, "  Other apps can use this app's voices and Whisper instead of "
+                      "installing their own (OpenAI-compatible, this computer only).",
+                fg=FG_DIM, font=("Segoe UI", 8)).pack(side="left")
+    pr = _prefs_load()
+    r1 = tk.Frame(f, bg=CARD); r1.pack(fill="x", padx=2, pady=3)
+    self._label(r1, "Port:").pack(side="left")
+    self.api_port_var = tk.StringVar(value=str(pr.get("api_port", 8765)))
+    tk.Entry(r1, textvariable=self.api_port_var, width=7, bg=SURFACE, fg=FG,
+             insertbackground=FG, relief="flat").pack(side="left", padx=6)
+    self._label(r1, "API key (optional):").pack(side="left", padx=(10, 0))
+    self.api_token_var = tk.StringVar(value=str(pr.get("api_token", "")))
+    tk.Entry(r1, textvariable=self.api_token_var, width=22, bg=SURFACE, fg=FG,
+             insertbackground=FG, relief="flat", show="*").pack(side="left", padx=6)
+    self._btn(r1, "Generate", self._api_genkey, color=SURFACE, padx=8).pack(side="left", padx=2)
+    self._btn(r1, "Copy key", lambda: self._api_copy(self.api_token_var.get().strip(), "API key"),
+              color=SURFACE, padx=8).pack(side="left", padx=2)
+    r2 = tk.Frame(f, bg=CARD); r2.pack(fill="x", padx=2, pady=3)
+    self._api_btn = self._btn(r2, "Start API server", self._api_toggle, color=BLUE)
+    self._api_btn.pack(side="left")
+    self.api_auto_var = tk.BooleanVar(value=bool(pr.get("api_autostart", False)))
+    self._api_open_btn = self._btn(r2, "Open in browser", self._api_open, color=SURFACE, padx=8)
+    self._api_open_btn.pack(side="left", padx=4)
+    self._api_copy_btn = self._btn(r2, "Copy URL", lambda: self._api_copy(self._api_base(), "URL"),
+                                   color=SURFACE, padx=8)
+    self._api_copy_btn.pack(side="left", padx=2)
+    ttk.Checkbutton(r2, text="Start when the app opens",
+                    variable=self.api_auto_var).pack(side="left", padx=12)
+    self._api_status = tk.Label(f, text="Stopped", bg=CARD, fg=FG_DIM,
+                                font=("Segoe UI", 8), anchor="w", justify="left")
+    self._api_status.pack(fill="x", padx=2, pady=(2, 0))
+    self._api = None
+    if self.api_auto_var.get():
+        self.root.after(1500, self._api_toggle)
+
+
+def _api_toggle(self):
+    if self._api is not None and self._api.running:
+        self._api_stop()
+        return
+    import api_server
+    try:
+        port = int(self.api_port_var.get().strip())
+        if not 1024 <= port <= 65535:
+            raise ValueError
+    except ValueError:
+        messagebox.showerror("Local API", "Port must be a number from 1024 to 65535.")
+        return
+    token = self.api_token_var.get().strip()
+    _prefs_set("api_port", port); _prefs_set("api_token", token)
+    _prefs_set("api_autostart", bool(self.api_auto_var.get()))
+    try:
+        self._api = api_server.ApiServer(_ApiBackend(self), port, token)
+        self._api.start()
+    except OSError as e:
+        self._api = None
+        messagebox.showerror("Local API", f"Could not start on port {port}:\n{e}")
+        return
+    self._api_btn.config(text="Stop API server")
+    base = f"http://127.0.0.1:{port}/v1"
+    self._api_status.config(
+        text=(f"Running - base URL: {base}\n"
+              f"TTS: POST {base}/audio/speech    Speech-to-text: POST {base}/audio/transcriptions\n"
+              f"Voices: GET {base}/voices" + ("    (send the token as 'Authorization: Bearer ...')"
+                                              if token else "    (no token set)")),
+        fg=GREEN)
+
+
+def _api_base(self):
+    return f"http://127.0.0.1:{self.api_port_var.get().strip() or 8765}/v1"
+
+
+def _api_copy(self, text, what):
+    if not text:
+        self._api_status.config(text=f"No {what} to copy yet.", fg=YELLOW)
+        return
+    self.root.clipboard_clear(); self.root.clipboard_append(text); self.root.update()
+    self._api_status.config(text=f"{what} copied to clipboard.", fg=GREEN)
+
+
+def _api_open(self):
+    import webbrowser
+    if self._api is None or not self._api.running:
+        self._api_toggle()
+    if self._api is not None and self._api.running:
+        webbrowser.open(f"http://127.0.0.1:{self._api.port}/")
+
+
+def _api_genkey(self):
+    import secrets
+    self.api_token_var.set("avs-" + secrets.token_urlsafe(24))
+    note = " Restart the API server to apply it." if self._api is not None and self._api.running else ""
+    self._api_status.config(text="New key generated (use Copy key)." + note, fg=YELLOW)
+
+
+def _api_stop(self):
+    api = getattr(self, "_api", None)
+    if api is not None:
+        api.stop()
+    self._api = None
+    try:
+        self._api_btn.config(text="Start API server")
+        self._api_status.config(text="Stopped", fg=FG_DIM)
+    except Exception:
+        pass
+
+
+AIApp._build_api_frame = _build_api_frame
+AIApp._api_toggle = _api_toggle
+AIApp._api_stop = _api_stop
+AIApp._api_base = _api_base
+AIApp._api_copy = _api_copy
+AIApp._api_open = _api_open
+AIApp._api_genkey = _api_genkey
 
 
 if __name__ == "__main__":
