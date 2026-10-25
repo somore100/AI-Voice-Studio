@@ -4319,26 +4319,67 @@ def _vc_pipeline(self):
                     continue
                 print(f"[AVS] VC heard: \"{text}\" (lang={lang_used})", flush=True)
                 st(f"Speaking: {text[:40]}", CYAN)
-                f = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-                f.close()
-                tmp = f.name
                 print(f"[AVS] VC speak: stt={cfg['stt']} lang={lang_used} "
                       f"tts={cfg['tts']} voice={cfg['voice']} chars={len(text)}",
                       flush=True)
-                self._vc_synth(cfg, text, tmp)
-                self._apply_tts_fx(tmp, "vc_speed", "vc_pitch", None, "vc_depth")
-                t_spk = time.time()
-                print(f"[AVS] VC timing: queued {t0 - t_cap:.2f}s | "
-                      f"hear {t_hear - t0:.2f}s | speak {t_spk - t_hear:.2f}s | "
-                      f"from end of your phrase to sound: {t_spk - t_cap:.2f}s "
-                      f"(+~0.4s silence wait before that)", flush=True)
-                self._vc_speaking = True
-                self._vc_speak_seq += 1
-                try:
-                    self._vc_play(tmp, cfg)
-                finally:
-                    self._vc_speaking = False
-                    self._vc_speak_end = time.time() + 0.4
+                # Streamed speech: synthesize sentence by sentence and start
+                # playing the first one while the rest are still being made.
+                import audio_fx
+                units = audio_fx.split_sentences(text) or [text]
+                ready = queue.Queue()
+
+                def synth_all():
+                    try:
+                        for u in units:
+                            if not alive():
+                                break
+                            fp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+                            fp.close()
+                            try:
+                                self._vc_synth(cfg, u, fp.name)
+                                self._apply_tts_fx(fp.name, "vc_speed", "vc_pitch",
+                                                   None, "vc_depth")
+                            except Exception:
+                                try: os.remove(fp.name)
+                                except OSError: pass
+                                raise
+                            ready.put(fp.name)
+                        ready.put(None)
+                    except Exception as e2:
+                        ready.put(e2)
+
+                threading.Thread(target=synth_all, daemon=True).start()
+                first = True
+                while alive():
+                    got = ready.get()
+                    if got is None:
+                        break
+                    if isinstance(got, Exception):
+                        raise got
+                    tmp = got
+                    if first:
+                        first = False
+                        t_spk = time.time()
+                        print(f"[AVS] VC timing: queued {t0 - t_cap:.2f}s | "
+                              f"hear {t_hear - t0:.2f}s | speak {t_spk - t_hear:.2f}s | "
+                              f"from end of your phrase to first sound: {t_spk - t_cap:.2f}s "
+                              f"(+~0.4s silence wait before that; {len(units)} sentence(s))",
+                              flush=True)
+                    self._vc_speaking = True
+                    self._vc_speak_seq += 1
+                    try:
+                        self._vc_play(tmp, cfg)
+                    finally:
+                        self._vc_speaking = False
+                        self._vc_speak_end = time.time() + 0.4
+                        try: os.remove(tmp)
+                        except OSError: pass
+                        tmp = None
+                while not ready.empty():            # stopped early: drop leftovers
+                    left = ready.get_nowait()
+                    if isinstance(left, str):
+                        try: os.remove(left)
+                        except OSError: pass
             except Exception as e:
                 err = True
                 print(f"[AVS] VC worker error: {e!r}", flush=True)
