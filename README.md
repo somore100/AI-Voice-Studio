@@ -121,14 +121,14 @@ Endpoints: `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/audio/translatio
 
 ## 🚧 Known gaps
 
-* On Windows and macOS the virtual microphone needs [VB-Cable](https://vb-audio.com/Cable/) / [BlackHole](https://existential.audio/blackhole/) installed first (Linux creates it automatically). This path is new and has had little testing. Live Pitch is still Linux only.
+* On Windows and macOS the virtual microphone needs [VB-Cable](https://vb-audio.com/Cable/) / [BlackHole](https://existential.audio/blackhole/) installed first (Linux creates it automatically). This path is new and has had little testing. Live Pitch now also uses PyAudio output there, equally untested.
 * Depth and the other effects are applied after speech is generated, so extreme settings can sound slightly metallic.
 * A full test of the packaged builds takes 45-60 minutes, so Windows and macOS builds are tested less often than Linux.
 
 ## 🧭 What's next
 
 * Test the Windows / macOS virtual microphone on real machines
-* Live Pitch for Windows and macOS
+* Test Live Pitch on Windows and macOS (implemented, untested)
 * Even lower voice-changer delay (streaming speech recognition)
 
 ## 🤝 Contributing

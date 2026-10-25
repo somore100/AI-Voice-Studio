@@ -3808,6 +3808,39 @@ def _vmic_cable_device():
     return None
 
 
+class _PyAudioOut:
+    """Live PCM output (PyAudio) with the bits of Popen that the live pitch
+    loop uses: stdin.write/flush/close, poll(), terminate()."""
+    def __init__(self, rate, dev_index=None):
+        import pyaudio
+        self._pa = pyaudio.PyAudio()
+        try:
+            self._st = self._pa.open(format=pyaudio.paInt16, channels=1, rate=rate,
+                                     output=True, output_device_index=dev_index)
+        except Exception:
+            self._pa.terminate()
+            raise
+        self.stdin = self
+
+    def write(self, pcm):
+        self._st.write(pcm)
+
+    def flush(self):
+        pass
+
+    def poll(self):
+        return None
+
+    def close(self):
+        pass
+
+    def terminate(self):
+        try:
+            self._st.stop_stream(); self._st.close()
+        finally:
+            self._pa.terminate()
+
+
 class _CablePlayer:
     """Plays a WAV into the virtual cable; poll()/terminate() like a Popen."""
     def __init__(self, path, dev_index):
@@ -4082,7 +4115,13 @@ def _vc_resolve_live(self):
     """Checks for the live pitch mode (main thread). (cfg, None) or (None, err)."""
     cfg = {"playback": bool(self.vc_playback.get()),
            "vmic": bool(self.vc_vmic.get()) and _vmic_available()}
-    if not sys.platform.startswith("linux") or not shutil.which("pacat"):
+    if sys.platform in _VMIC_CABLE:
+        try:
+            import pyaudio  # noqa: F401
+        except Exception:
+            return None, ("msg", "Live Pitch only mode needs PyAudio. Use the "
+                                 "STT->TTS mode instead.")
+    elif not sys.platform.startswith("linux") or not shutil.which("pacat"):
         return None, ("msg", "Live Pitch only mode needs Linux with PulseAudio/"
                              "PipeWire and the 'pacat' tool (package "
                              "pulseaudio-utils). Use the STT->TTS mode instead.")
@@ -4112,6 +4151,8 @@ def _vc_live_loop(self):
     outs = []
 
     def _open_out(rate, device):
+        if sys.platform in _VMIC_CABLE:
+            return _PyAudioOut(rate, device)
         cmd = [pacat, "--playback", f"--rate={rate}", "--channels=1",
                "--format=s16le", "--latency-msec=40",
                "--client-name=AI Voice Studio", "--stream-name=Voice Changer"]
@@ -4132,7 +4173,8 @@ def _vc_live_loop(self):
             chunk = source.CHUNK
             shifter = PitchShifter(rate)
             if cfg["vmic"]:
-                outs.append(_open_out(rate, _VMIC_SINK))
+                outs.append(_open_out(rate, (_vmic_cable_device() or (None,))[0]
+                                      if sys.platform in _VMIC_CABLE else _VMIC_SINK))
             if cfg["playback"]:
                 outs.append(_open_out(rate, None))
             print(f"[AVS] live pitch: rate={rate} chunk={chunk} vmic={cfg['vmic']} "
