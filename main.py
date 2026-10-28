@@ -4302,7 +4302,9 @@ def _vc_pipeline(self):
                 st("Processing..." + (f" ({waiting} waiting)" if waiting else ""), YELLOW)
                 t0 = time.time()
                 lang_used = cfg.get("lang_name")
-                if cfg["stt"] == "vosk":
+                if isinstance(pcm, str):            # streamed: already recognized
+                    text = pcm.strip()
+                elif cfg["stt"] == "vosk":
                     rec = _vrec_cls(_vosk, 16000)
                     for _i in range(0, len(pcm), 8000):
                         rec.AcceptWaveform(pcm[_i:_i + 8000])
@@ -4408,6 +4410,49 @@ def _vc_pipeline(self):
 
     threading.Thread(target=worker, daemon=True).start()
 
+    def listen_vosk(source):
+        """Streaming recognition: audio goes into Vosk while you are still
+        talking, so the text is ready the moment the phrase ends. Returns
+        (text, voiced_seconds) or None if nothing was said."""
+        import audioop
+        from collections import deque
+        rate = int(source.SAMPLE_RATE)
+        per = source.CHUNK / float(rate)
+        thr = rec.energy_threshold
+        pre = deque(maxlen=4)           # ~ the last 4 chunks, so word onsets aren't lost
+        vrec = None
+        cvt = None
+        voiced = silent = total = 0.0
+        t_idle = time.time()
+        while alive():
+            data = source.stream.read(source.CHUNK)
+            loud = audioop.rms(data, 2) > thr
+            if vrec is None:
+                pre.append(data)
+                if loud:
+                    vrec = _vrec_cls(_vosk, 16000)
+                    for d in pre:
+                        out, cvt = audioop.ratecv(d, 2, 1, rate, 16000, cvt)
+                        vrec.AcceptWaveform(out)
+                    pre.clear()
+                    voiced = per
+                    silent = total = 0.0
+                elif time.time() - t_idle > 1.0:
+                    return None
+                continue
+            out, cvt = audioop.ratecv(data, 2, 1, rate, 16000, cvt)
+            vrec.AcceptWaveform(out)
+            total += per
+            if loud:
+                voiced += per
+                silent = 0.0
+            else:
+                silent += per
+            if silent >= rec.pause_threshold or total >= 7.0:
+                text = json.loads(vrec.FinalResult()).get("text", "").strip()
+                return text, voiced
+        return None
+
     rec = self.recognizer
     rec.pause_threshold = 0.4           # end of phrase after ~0.4 s silence
     rec.non_speaking_duration = 0.3
@@ -4420,20 +4465,32 @@ def _vc_pipeline(self):
                 while alive():
                     was_speaking = self._vc_speaking
                     seq0 = self._vc_speak_seq
-                    try:
-                        audio = rec.listen(source, timeout=1, phrase_time_limit=7)
-                    except sr.WaitTimeoutError:
-                        continue
-                    if not alive():
-                        break
+                    if cfg["stt"] == "vosk":
+                        got = listen_vosk(source)
+                        if not alive():
+                            break
+                        if got is None:
+                            continue
+                        pcm, _voiced = got      # recognized text, not audio
+                        short = _voiced < 0.25 or not pcm
+                    else:
+                        try:
+                            audio = rec.listen(source, timeout=1, phrase_time_limit=7)
+                        except sr.WaitTimeoutError:
+                            continue
+                        if not alive():
+                            break
+                        pcm = None
                     if cfg["playback"] and (was_speaking or self._vc_speaking
                                             or seq0 != self._vc_speak_seq
                                             or time.time() < self._vc_speak_end):
                         print("[AVS] VC: ignored a phrase heard during our own "
                               "playback", flush=True)
                         continue
-                    pcm = audio.get_raw_data(convert_rate=16000, convert_width=2)
-                    if len(pcm) < 8000:         # < 0.25 s: a click, not speech
+                    if pcm is None:
+                        pcm = audio.get_raw_data(convert_rate=16000, convert_width=2)
+                        short = len(pcm) < 8000     # < 0.25 s: a click, not speech
+                    if short:
                         continue
                     item = (pcm, time.time())
                     try:
