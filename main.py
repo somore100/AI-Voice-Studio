@@ -596,6 +596,9 @@ def resolve_input_index(pa, mic):
         f"The selected microphone ({name or idx}) is no longer available. "
         "Pick a microphone from the dropdown again (or use System Default).")
 
+_MIC_LEVEL = [0.0]      # latest mic RMS (DC removed), read by the mini-mode bars
+
+
 class _DCBlockStream:
     """Proxy for sr.Microphone.stream: subtracts a slowly tracked DC offset.
 
@@ -618,6 +621,7 @@ class _DCBlockStream:
         m = float(a.mean())
         self._dc = m if self._dc is None else (1 - self._alpha) * self._dc + self._alpha * m
         out = np.clip(a.astype(np.float32) - self._dc, -32768, 32767).astype(np.int16)
+        _MIC_LEVEL[0] = float(np.sqrt(np.mean(np.square(out.astype(np.float32)))))
         return out.tobytes()
 
     def __getattr__(self, name):          # close(), pyaudio_stream, ...
@@ -2933,12 +2937,20 @@ class AIApp:
 
     def _animate_eq(self):
         if not self.eq_animating: return
+        import math
         cols = [BLUE, PURPLE, GREEN]
+        # Mic level on a dB scale: about -60 dB (room noise) -> 0, -20 dB (loud speech) -> 1
+        rms = max(_MIC_LEVEL[0], 1.0)
+        lvl = min(1.0, max(0.0, (20 * math.log10(rms / 32768.0) + 60) / 40.0))
+        prev = getattr(self, "_eq_lvl", 0.0)
+        lvl = lvl if lvl > prev else prev * 0.6 + lvl * 0.4      # fast attack, slow decay
+        self._eq_lvl = lvl
         for i, bar in enumerate(self.eq_bars):
-            h = random.randint(8,46); x0,_,x1,_ = self.eq_canvas.coords(bar)
+            h = 2 + 44 * lvl * random.uniform(0.55, 1.0)
+            x0,_,x1,_ = self.eq_canvas.coords(bar)
             self.eq_canvas.coords(bar, x0, 50-h, x1, 50)
             self.eq_canvas.itemconfig(bar, fill=cols[i%3])
-        self.root.after(180, self._animate_eq)
+        self.root.after(80, self._animate_eq)
 
 
 # ──────────────────────────────────────────────────────────────
