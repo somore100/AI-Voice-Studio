@@ -17,3 +17,6 @@ tidy_repo.py
 dc_test.py
 jack_repro.py
 mic_level_test.py
+.venv/
+CLAUDE.md
+claude.md
