@@ -27,6 +27,7 @@ Shape the result after it is generated:
 
 * **Speed, Pitch, Volume** sliders - or just type an exact value (`150` = 150 %)
 * **Depth** - makes a voice deeper and bigger, or lighter and smaller, **without changing its pitch**
+* **Selected text only** - tick it, select words in the text box, and give just those words their own speed and pitch
 * **Curve editor** - draw speed, pitch and volume curves over a zoomable waveform timeline with sentence markers, snap-to-pause, a zoom readout and a "play original" button, so you can slow down one sentence or lift the pitch on one word-sized stretch
 * Preview (one at a time), save to WAV
 * **Find a voice by traits** - tick Pitch / Brightness / Liveliness, drag the sliders, filter by gender and language, and the app ranks all your installed voices by how close they are (each voice is measured once, then remembered)
@@ -92,6 +93,18 @@ System tools:
 
 Where things live: models are stored in `./models/` when you run from source (packaged Linux builds use `~/.local/share/AI Voice Studio/models`); settings are saved in a small `settings.json` in your user config folder.
 
+## 🔌 Local API
+
+Other programs can use this app's voices and Whisper instead of installing their own models. Turn it on in the **Local API** section (it listens on `127.0.0.1` only, optional token). It speaks the OpenAI format, so any app with a "custom / local OpenAI provider" setting works: base URL `http://127.0.0.1:8765/v1`.
+
+```bash
+curl http://127.0.0.1:8765/v1/audio/speech -H "Content-Type: application/json" \
+  -d '{"model":"kokoro","voice":"af_heart","input":"Hello there"}' -o hello.wav
+curl http://127.0.0.1:8765/v1/audio/transcriptions -F file=@hello.wav -F model=whisper-1
+```
+
+Endpoints: `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/audio/translations`, `/v1/models`, `/v1/voices`. Extra speech fields: `language`, `pitch`, `volume`, `depth`.
+
 ## 🗂️ Project layout
 
 | File | Purpose |
@@ -108,16 +121,15 @@ Where things live: models are stored in `./models/` when you run from source (pa
 
 ## 🚧 Known gaps
 
-* The virtual microphone is **Linux only** for now (Windows VB-Cable and macOS BlackHole support are planned).
+* On Windows and macOS the virtual microphone needs [VB-Cable](https://vb-audio.com/Cable/) / [BlackHole](https://existential.audio/blackhole/) installed first (Linux creates it automatically). This path is new and has had little testing. Live Pitch now also uses PyAudio output there, equally untested.
 * Depth and the other effects are applied after speech is generated, so extreme settings can sound slightly metallic.
 * A full test of the packaged builds takes 45-60 minutes, so Windows and macOS builds are tested less often than Linux.
 
 ## 🧭 What's next
 
-* A local API so other programs can request speech from the app
-* A faster voice changer (quicker speech recognition)
-* Edit the speed or pitch of a selected piece of text
-* Virtual microphone for Windows and macOS
+* Test the Windows / macOS virtual microphone on real machines
+* Test Live Pitch on Windows and macOS (implemented, untested)
+* Even lower voice-changer delay (streaming speech recognition)
 
 ## 🤝 Contributing
 
