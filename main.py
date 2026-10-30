@@ -205,6 +205,13 @@ _apply_agreed_tos_env_vars()
 # ──────────────────────────────────────────────────────────────
 #  COLOURS
 # ──────────────────────────────────────────────────────────────
+APP_NAME    = "AI Voice Studio"
+APP_VERSION = "1.0"
+SUPPORT_EMAIL = "support.somore100@gmail.com"
+# Optional: URL of a relay web app (see RELAY_APPS_SCRIPT in feedback.py) so reports
+# are sent from inside the window. Empty = open the user's mail client instead.
+FEEDBACK_ENDPOINT = os.environ.get("AVS_FEEDBACK_ENDPOINT", "")
+
 BG      = "#1a1b2e"
 CARD    = "#1e1f33"
 SURFACE = "#2a2b45"
@@ -2360,8 +2367,18 @@ class AIApp:
         f = tk.Frame(self._inner, bg=BG); f.pack(fill="x", padx=10, pady=(4,14))
         tk.Label(f, text="made by domore100", bg=BG, fg=FG_DIM,
                  font=("Segoe UI",8)).pack(side="right", padx=(0,2))
-        tk.Label(f, text="v1  |", bg=BG, fg=BORDER,
+        tk.Label(f, text=f"v{APP_VERSION}  |", bg=BG, fg=BORDER,
                  font=("Segoe UI",8)).pack(side="right", padx=(0,4))
+        self._btn(f, "Leave Feedback", self.open_feedback, color=SURFACE,
+                  padx=10, pady=3).pack(side="left")
+
+    def open_feedback(self):
+        import feedback
+        feedback.open_feedback(
+            self.root, APP_NAME, APP_VERSION, SUPPORT_EMAIL,
+            colors={"bg": BG, "card": CARD, "surface": SURFACE, "border": BORDER,
+                    "fg": FG, "dim": FG_DIM, "accent": CYAN, "good": GREEN, "bad": RED},
+            endpoint=FEEDBACK_ENDPOINT or None)
 
     # NOTE: The Model Download Manager UI/logic (_build_models_frame,
     # _check_models, _download_missing, etc.) lives below as module-level
