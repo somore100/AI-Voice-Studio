@@ -191,19 +191,38 @@ def send_via_endpoint(endpoint, to_addr, subject, body, timeout=15):
             raise RuntimeError(f"The relay rejected the report ({r.status}): {text[:120]}")
 
 
-def open_mail_client(to_addr, subject, body):
-    """Open the default mail client with the report pre-filled. Returns True
-    if the whole body fit (otherwise it was shortened - the caller should
-    point the user at 'Copy report')."""
+def _open_shortened(make_url, body, limit):
+    """Open make_url(body), shortening the body until the link fits `limit`.
+    Returns True if the whole body fit."""
     full = len(body)
     while True:
-        url = ("mailto:" + urllib.parse.quote(to_addr) + "?subject=" +
-               urllib.parse.quote(subject) + "&body=" + urllib.parse.quote(body))
-        if len(url) <= _MAILTO_LIMIT or len(body) < 200:
+        url = make_url(body)
+        if len(url) <= limit or len(body) < 200:
             break
         body = body[: int(len(body) * 0.85)]
     webbrowser.open(url)
     return len(body) == full
+
+
+def open_mail_client(to_addr, subject, body):
+    """Open the default mail client (mailto:) with the report pre-filled.
+    Returns True if the whole body fit. Fails silently on systems with no mail
+    client registered - which is why the window also offers Gmail and Copy."""
+    return _open_shortened(
+        lambda b: ("mailto:" + urllib.parse.quote(to_addr) + "?subject=" +
+                   urllib.parse.quote(subject) + "&body=" + urllib.parse.quote(b)),
+        body, _MAILTO_LIMIT)
+
+
+def open_gmail(to_addr, subject, body):
+    """Open a Gmail compose tab in the browser with the report pre-filled
+    (works without any mail program installed; the user signs in to their own
+    account and presses Send)."""
+    return _open_shortened(
+        lambda b: "https://mail.google.com/mail/?" + urllib.parse.urlencode(
+            {"view": "cm", "fs": "1", "to": to_addr, "su": subject, "body": b},
+            quote_via=urllib.parse.quote),
+        body, 6000)
 
 
 # ── the window ────────────────────────────────────────────────────────────
@@ -325,7 +344,7 @@ def open_feedback(root, app_name, app_version, to_addr, colors=None, endpoint=No
                     send_btn.config(state="normal")
                     if err:
                         say(f"Could not send: {err[:140]}\nYour text is still here - try "
-                            f"again, or use 'Copy report' / 'Email app'.", c["bad"])
+                            f"again, or use 'Copy report'.", c["bad"])
                     else:
                         say("Thank you! Your report was sent.", c["good"])
                         top.after(1800, top.destroy)
@@ -336,9 +355,19 @@ def open_feedback(root, app_name, app_version, to_addr, colors=None, endpoint=No
             threading.Thread(target=work, daemon=True).start()
         else:
             whole = open_mail_client(to_addr, subject, body)
-            say("Your email app was opened with the report filled in - press Send there."
-                + ("" if whole else "\nIt was too long to fit, so it was shortened: use "
-                   "'Copy report' and paste the full text."), c["good"])
+            say("Tried to open your email app with the report filled in. If nothing "
+                "appeared, use 'Open in Gmail' or 'Copy report'."
+                + ("" if whole else "\nThe report was too long for the link and was "
+                   "shortened: use 'Copy report' for the full text."), c["dim"])
+
+    def gmail():
+        r = get_report()
+        if not r:
+            return
+        whole = open_gmail(to_addr, *r)
+        say("Opened Gmail in your browser with the report filled in - press Send there."
+            + ("" if whole else "\nIt was shortened: use 'Copy report' for the full text."),
+            c["good"])
 
     bar = tk.Frame(top, bg=c["bg"])
     bar.pack(fill="x", padx=14, pady=(0, 12))
@@ -351,7 +380,9 @@ def open_feedback(root, app_name, app_version, to_addr, colors=None, endpoint=No
     send_btn = btn("Send report" if endpoint else "Email app", submit, c["accent"],
                    fg=c["bg"], bold=True)
     send_btn.pack(side="left")
-    btn("Copy report", copy_report, c["surface"]).pack(side="left", padx=6)
+    if not endpoint:
+        btn("Open in Gmail", gmail, c["surface"]).pack(side="left", padx=6)
+    btn("Copy report", copy_report, c["surface"]).pack(side="left")
     btn("Cancel", top.destroy, c["surface"]).pack(side="right")
     label("Sent to " + to_addr, fg=c["dim"], font=("Segoe UI", 8)).pack(
         anchor="w", padx=14, pady=(0, 8))
