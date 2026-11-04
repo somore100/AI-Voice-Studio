@@ -4254,6 +4254,22 @@ def _vc_synth(self, cfg, text, out):
         TTS_ENGINES["xtts"].synthesize(text, cfg["voice"], out, cfg["xtts_lang"])
 
 
+# Things Whisper "hears" in silence / keyboard / mouse noise
+_VC_JUNK = {"you", "", "bye", "thanks for watching", "thank you for watching",
+            "uh", "um", "hmm", "mm"}
+
+
+def _voiced_seconds(pcm16k, threshold):
+    """Seconds of 16 kHz mono int16 audio whose 20 ms frames are louder than
+    `threshold` (the recognizer's energy threshold). A click or key press is a
+    few ms; speech is several hundred."""
+    import audioop
+    step = 640                                  # 20 ms at 16 kHz, 2 bytes/sample
+    n = sum(1 for i in range(0, len(pcm16k) - step + 1, step)
+            if audioop.rms(pcm16k[i:i + step], 2) > threshold)
+    return n * 0.02
+
+
 def _vc_pipeline(self):
     """STT -> TTS voice changer. This thread only listens (mic opened and
     calibrated once); a second worker thread does hear/speak/play so the
@@ -4331,8 +4347,10 @@ def _vc_pipeline(self):
                     segs, info = get_fwhisper_model().transcribe(
                         raw, language=cfg.get("wlang") or None, beam_size=1,
                         temperature=0.0, condition_on_previous_text=False,
-                        without_timestamps=True)
-                    text = "".join(sg.text for sg in segs).strip()
+                        without_timestamps=True, vad_filter=True,
+                        vad_parameters={"min_silence_duration_ms": 300})
+                    text = "".join(sg.text for sg in segs
+                                   if getattr(sg, "no_speech_prob", 0.0) < 0.6).strip()
                     if not cfg.get("wlang"):
                         lang_used = "auto->" + str(info.language)
                 else:
@@ -4343,9 +4361,16 @@ def _vc_pipeline(self):
                         condition_on_previous_text=False,
                         without_timestamps=True, **kw)
                     text = res["text"].strip()
+                    _sg = res.get("segments") or []
+                    if _sg and all(g.get("no_speech_prob", 0) > 0.6
+                                   and g.get("avg_logprob", 0) < -1.0 for g in _sg):
+                        text = ""                   # Whisper itself says: no speech
                     if not cfg.get("wlang"):
                         lang_used = "auto->" + str(res.get("language", "?"))
                 t_hear = time.time()
+                if text.lower().strip(" .!?,-") in _VC_JUNK:
+                    print(f"[AVS] VC: dropped noise hallucination {text!r}", flush=True)
+                    text = ""
                 if not text or not alive():
                     continue
                 print(f"[AVS] VC heard: \"{text}\" (lang={lang_used})", flush=True)
@@ -4506,7 +4531,10 @@ def _vc_pipeline(self):
                         continue
                     if pcm is None:
                         pcm = audio.get_raw_data(convert_rate=16000, convert_width=2)
-                        short = len(pcm) < 8000     # < 0.25 s: a click, not speech
+                        short = _voiced_seconds(pcm, rec.energy_threshold) < 0.3
+                        if short:
+                            print("[AVS] VC: ignored a short noise (click/typing)",
+                                  flush=True)
                     if short:
                         continue
                     item = (pcm, time.time())
