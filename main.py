@@ -4525,6 +4525,12 @@ def _vc_pipeline(self):
                             pass
         except Exception as e:
             print(f"[AVS] VC capture error: {e!r}", flush=True)
+            if isinstance(e, RuntimeError) and alive():
+                # Muted / unopenable mic won't fix itself: stop instead of retrying forever
+                msg = str(e)
+                fail(msg)
+                self.root.after(0, lambda m=msg: messagebox.showerror("Microphone Error", m))
+                return
             if alive():
                 st(f"Error: {str(e)[:50]}", RED)
                 time.sleep(1)
