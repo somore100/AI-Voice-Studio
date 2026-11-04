@@ -45,6 +45,7 @@ REPORT_TYPES = [          # (label shown, tag used in the subject)
     ("Other", "OTHER"),
 ]
 
+MAX_TITLE, MAX_DESC = 120, 4000
 _MAILTO_LIMIT = 1800      # many mail clients / OSes choke on longer mailto: links
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
@@ -180,11 +181,12 @@ def build_report(app_name, app_version, rtype, name, title, description, sysinfo
     return subject, "\n".join(lines)
 
 
-def send_via_endpoint(endpoint, to_addr, subject, body, timeout=15):
+def send_via_endpoint(endpoint, to_addr, subject, body, timeout=15, extra=None):
     """POST the report to a relay. Raises on any failure."""
-    payload = json.dumps({"to": to_addr, "subject": subject, "body": body}).encode()
-    req = urllib.request.Request(endpoint, data=payload,
-                                 headers={"Content-Type": "text/plain"})  # no CORS preflight
+    payload = json.dumps({"to": to_addr, "subject": subject, "body": body,
+                          **(extra or {})}).encode("utf-8")
+    req = urllib.request.Request(endpoint, data=payload, method="POST",
+                                 headers={"Content-Type": "text/plain;charset=utf-8"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         text = r.read().decode("utf-8", "replace")
         if r.status >= 400 or '"ok":false' in text.replace(" ", "").lower():
@@ -307,12 +309,19 @@ def open_feedback(root, app_name, app_version, to_addr, colors=None, endpoint=No
         status.config(text=text, fg=color)
 
     def get_report():
-        t = title.get().strip()
+        t = " ".join(title.get().split())[:MAX_TITLE]
         d = desc.get("1.0", "end").strip()
         if not t:
             say("Please enter a title.", c["bad"]); return None
+        if len(t) < 4:
+            say("The title is too short.", c["bad"]); return None
         if not d:
             say("Please describe the problem or suggestion.", c["bad"]); return None
+        if len(d) < 10:
+            say("The description is too short to be useful.", c["bad"]); return None
+        if len(d) > MAX_DESC:
+            say(f"The description is too long ({len(d)} of {MAX_DESC} characters).",
+                c["bad"]); return None
         info = cache.get("info") if use_sys.get() else None
         return build_report(app_name, app_version, rtype.get(), name.get(), t, d, info)
 
@@ -335,7 +344,9 @@ def open_feedback(root, app_name, app_version, to_addr, colors=None, endpoint=No
 
             def work():
                 try:
-                    send_via_endpoint(endpoint, to_addr, subject, body)
+                    send_via_endpoint(endpoint, to_addr, subject, body, extra={
+                        "app": app_name, "version": app_version,
+                        "type": dict(REPORT_TYPES).get(rtype.get(), "OTHER")})
                     err = None
                 except Exception as e:
                     err = str(e)
@@ -344,7 +355,7 @@ def open_feedback(root, app_name, app_version, to_addr, colors=None, endpoint=No
                     send_btn.config(state="normal")
                     if err:
                         say(f"Could not send: {err[:140]}\nYour text is still here - try "
-                            f"again, or use 'Copy report'.", c["bad"])
+                            f"again, or use 'Open in Gmail' / 'Copy report'.", c["bad"])
                     else:
                         say("Thank you! Your report was sent.", c["good"])
                         top.after(1800, top.destroy)
@@ -380,8 +391,7 @@ def open_feedback(root, app_name, app_version, to_addr, colors=None, endpoint=No
     send_btn = btn("Send report" if endpoint else "Email app", submit, c["accent"],
                    fg=c["bg"], bold=True)
     send_btn.pack(side="left")
-    if not endpoint:
-        btn("Open in Gmail", gmail, c["surface"]).pack(side="left", padx=6)
+    btn("Open in Gmail", gmail, c["surface"]).pack(side="left", padx=6)
     btn("Copy report", copy_report, c["surface"]).pack(side="left")
     btn("Cancel", top.destroy, c["surface"]).pack(side="right")
     label("Sent to " + to_addr, fg=c["dim"], font=("Segoe UI", 8)).pack(
@@ -390,6 +400,8 @@ def open_feedback(root, app_name, app_version, to_addr, colors=None, endpoint=No
     return top
 
 
+# (Arrows of War's feedback_kit/apps_script.gs is a hardened version of this: it fixes the
+# recipient server-side, strips newlines from the subject and caps the body.)
 # Paste into https://script.google.com (new project), then Deploy > New deployment >
 # Web app, "Execute as: Me", "Who has access: Anyone". Use the /exec URL as `endpoint`.
 # It mails the report to the account that owns the script, with no password in the app.

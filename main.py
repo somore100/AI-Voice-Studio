@@ -208,9 +208,12 @@ _apply_agreed_tos_env_vars()
 APP_NAME    = "AI Voice Studio"
 APP_VERSION = "1.0"
 SUPPORT_EMAIL = "support.somore100@gmail.com"
-# Optional: URL of a relay web app (see RELAY_APPS_SCRIPT in feedback.py) so reports
-# are sent from inside the window. Empty = open the user's mail client instead.
-FEEDBACK_ENDPOINT = os.environ.get("AVS_FEEDBACK_ENDPOINT", "")
+# Relay web app that forwards feedback to SUPPORT_EMAIL (same Google Apps Script relay as
+# Arrows of War; see RELAY_APPS_SCRIPT in feedback.py). It can only receive reports and holds
+# no password, so shipping the URL is fine. Env var overrides; set empty to use the mail app.
+FEEDBACK_ENDPOINT = os.environ.get(
+    "AVS_FEEDBACK_ENDPOINT",
+    "https://script.google.com/macros/s/AKfycbzhF5zd0GIdYDt6hThcgUukw7gIwyeHoXqZRydS8o87d5DWmEArAc2N64_T_ZcFqEye/exec")
 
 BG      = "#1a1b2e"
 CARD    = "#1e1f33"
