@@ -19,6 +19,7 @@ Python 3.12 + Tkinter. `main.py`, `audio_fx.py`, `curve_editor.py`, `voice_finde
 * Mini-mode bars follow the real mic level (`_MIC_LEVEL`).
 * Leave Feedback: `feedback.py` (reusable, stdlib only) + footer button; sends via the shared Google Apps Script relay (`FEEDBACK_ENDPOINT` in main.py, same one as Arrows of War, goes to support.somore100@gmail.com); fallbacks Open in Gmail / mail app / Copy. Verified end to end.
 * Local API: word timestamps (`timestamp_granularities[]=word` + `verbose_json` -> `words`), repeated multipart fields are merged. **Compile-checked and multipart-tested only; not run against a live server.**
+* Local API autostart (branch feat/api-autostart): `autostart.py` (login modes off/window/background via XDG .desktop, Windows Run key, macOS LaunchAgent; single-instance via loopback port 47653), `applog.py` (tee stdout/stderr to `<settings dir>/app.log`), `--background` flag, "At login" selector + "Open log" in the API section, API-start preference now saved on toggle. Pure logic tested for real (Linux file, sockets, log); GUI flow, Windows registry and macOS plist NOT run.
 * UNTESTED: Windows/macOS virtual mic and Live Pitch (PyAudio output).
 
 ## Next (also in README "What's next")

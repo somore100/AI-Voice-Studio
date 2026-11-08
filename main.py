@@ -205,6 +205,10 @@ _apply_agreed_tos_env_vars()
 # ──────────────────────────────────────────────────────────────
 #  COLOURS
 # ──────────────────────────────────────────────────────────────
+import applog
+import autostart
+
+APP_LOG_PATH = None     # set at startup (see __main__); shown by "Open log"
 APP_NAME    = "AI Voice Studio"
 APP_VERSION = "1.0"
 SUPPORT_EMAIL = "support.somore100@gmail.com"
@@ -933,6 +937,15 @@ class AIApp:
                 v.trace_add("write", self._settings_schedule)
 
     def _on_close_request(self):
+        if getattr(self, "_bg_instance", False):
+            if messagebox.askyesno(
+                    "Keep running?",
+                    "Keep AI Voice Studio running in the background?\n\n"
+                    "Yes: hide this window; the Local API stays on.\n"
+                    "No: quit completely."):
+                self.root.withdraw()
+                print("[AVS] window hidden, still running in the background", flush=True)
+                return
         if self._download_in_progress:
             proceed = messagebox.askyesno(
                 "Download in progress",
@@ -4785,6 +4798,31 @@ def _build_api_frame(self):
     self._api_copy_btn.pack(side="left", padx=2)
     ttk.Checkbutton(r2, text="Start when the app opens",
                     variable=self.api_auto_var).pack(side="left", padx=12)
+    self.api_token_var.trace_add("write", lambda *_: _prefs_set(
+        "api_token", self.api_token_var.get().strip()))
+    self.api_port_var.trace_add("write", lambda *_: (
+        _prefs_set("api_port", int(self.api_port_var.get()))
+        if self.api_port_var.get().strip().isdigit() else None))
+    self.api_auto_var.trace_add("write", lambda *_: _prefs_set(
+        "api_autostart", bool(self.api_auto_var.get())))
+    r3 = tk.Frame(f, bg=CARD); r3.pack(fill="x", padx=2, pady=3)
+    self._label(r3, "When I log in to this computer:").pack(side="left")
+    self._login_modes = {"Do nothing": "off",
+                         "Open AI Voice Studio": "window",
+                         "Run in the background (API only, no window)": "background"}
+    cur = autostart.get_login_mode()
+    self.login_mode_var = tk.StringVar(
+        value=next(k for k, v in self._login_modes.items() if v == cur))
+    cb = ttk.Combobox(r3, textvariable=self.login_mode_var, state="readonly", width=42,
+                      values=list(self._login_modes))
+    cb.pack(side="left", padx=6)
+    cb.bind("<<ComboboxSelected>>", lambda e: self._login_mode_apply())
+    self._btn(r3, "Open log", self._open_log, color=SURFACE, padx=8).pack(side="left", padx=4)
+    self._label(f, "Background mode starts the app hidden and turns the Local API on. Open the "
+                   "app again to show its window; closing it then asks whether to keep running. "
+                   "It starts at login, not before you sign in.",
+                fg=FG_DIM, font=("Segoe UI", 8), wraplength=640, justify="left").pack(
+                    anchor="w", padx=2)
     self._api_status = tk.Label(f, text="Stopped", bg=CARD, fg=FG_DIM,
                                 font=("Segoe UI", 8), anchor="w", justify="left")
     self._api_status.pack(fill="x", padx=2, pady=(2, 0))
@@ -4793,17 +4831,29 @@ def _build_api_frame(self):
         self.root.after(1500, self._api_toggle)
 
 
-def _api_toggle(self):
+def _api_toggle(self, quiet=False):
+    """Start / stop the API. quiet=True (background mode: no window to show a
+    dialog on) logs problems instead of popping up message boxes."""
     if self._api is not None and self._api.running:
         self._api_stop()
         return
     import api_server
+
+    def problem(msg):
+        print(f"[AVS] Local API: {msg}", flush=True)
+        if quiet:
+            try:
+                self._api_status.config(text=msg, fg=RED)
+            except Exception:
+                pass
+        else:
+            messagebox.showerror("Local API", msg)
     try:
         port = int(self.api_port_var.get().strip())
         if not 1024 <= port <= 65535:
             raise ValueError
     except ValueError:
-        messagebox.showerror("Local API", "Port must be a number from 1024 to 65535.")
+        problem("Port must be a number from 1024 to 65535.")
         return
     token = self.api_token_var.get().strip()
     _prefs_set("api_port", port); _prefs_set("api_token", token)
@@ -4813,8 +4863,10 @@ def _api_toggle(self):
         self._api.start()
     except OSError as e:
         self._api = None
-        messagebox.showerror("Local API", f"Could not start on port {port}:\n{e}")
+        problem(f"Could not start on port {port}: {e}")
         return
+    print(f"[AVS] Local API started on 127.0.0.1:{port}"
+          f"{' (background mode)' if quiet else ''}", flush=True)
     self._api_btn.config(text="Stop API server")
     base = f"http://127.0.0.1:{port}/v1"
     self._api_status.config(
@@ -4852,9 +4904,16 @@ def _api_genkey(self):
     self._api_status.config(text="New key generated (use Copy key)." + note, fg=YELLOW)
 
 
+def _api_ensure(self, quiet=True):
+    """Start the API if it is not already running."""
+    if self._api is None or not self._api.running:
+        self._api_toggle(quiet=quiet)
+
+
 def _api_stop(self):
     api = getattr(self, "_api", None)
     if api is not None:
+        print("[AVS] Local API stopped", flush=True)
         api.stop()
     self._api = None
     try:
@@ -4864,6 +4923,61 @@ def _api_stop(self):
         pass
 
 
+def _login_mode_apply(self):
+    mode = self._login_modes.get(self.login_mode_var.get(), "off")
+    try:
+        where = autostart.set_login_mode(mode, script=os.path.abspath(__file__))
+        print(f"[AVS] start at login set to '{mode}' ({where})", flush=True)
+        msg = {"off": "Will not start at login.",
+               "window": "AI Voice Studio will open when you log in.",
+               "background": "AI Voice Studio will start hidden at login and run the Local API."}[mode]
+        self._api_status.config(text=msg, fg=GREEN)
+    except Exception as e:
+        print(f"[AVS] start at login failed: {e!r}", flush=True)
+        self.login_mode_var.set(next(k for k, v in self._login_modes.items()
+                                     if v == autostart.get_login_mode()))
+        self._api_status.config(text=f"Could not change start at login: {e}", fg=RED)
+
+
+def _open_log(self):
+    path = APP_LOG_PATH
+    if not path or not os.path.exists(path):
+        self._api_status.config(text="No log file yet.", fg=YELLOW)
+        return
+    try:
+        if sys.platform == "win32":
+            os.startfile(path)
+        else:
+            subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", path],
+                             env=_ext_env(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:
+        self._api_status.config(text=f"Could not open the log: {e}  ({path})", fg=RED)
+
+
+def _show_window(self):
+    """Bring the (possibly hidden) main window to the front."""
+    self.root.deiconify()
+    self.root.lift()
+    try:
+        self.root.focus_force()
+    except Exception:
+        pass
+    print("[AVS] window shown", flush=True)
+
+
+def _start_background(self):
+    """--background: no window; run the Local API."""
+    self._bg_instance = True
+    self.root.withdraw()
+    print("[AVS] background mode: window hidden, starting the Local API", flush=True)
+    self.root.after(2500, lambda: self._api_ensure(quiet=True))
+
+
+AIApp._login_mode_apply = _login_mode_apply
+AIApp._open_log = _open_log
+AIApp._show_window = _show_window
+AIApp._start_background = _start_background
+AIApp._api_ensure = _api_ensure
 AIApp._build_api_frame = _build_api_frame
 AIApp._api_toggle = _api_toggle
 AIApp._api_stop = _api_stop
@@ -4874,6 +4988,17 @@ AIApp._api_genkey = _api_genkey
 
 
 if __name__ == "__main__":
+    APP_LOG_PATH = applog.setup(os.path.join(os.path.dirname(_settings_path()), "app.log"))
+    _bg = autostart.BACKGROUND_FLAG in sys.argv[1:]
+    _hold = {}
+    _state, _inst = autostart.claim_instance(
+        lambda: _hold.get("app") and _hold["root"].after(0, _hold["app"]._show_window))
+    if _state == "running":
+        print("[AVS] already running - asked it to show its window; exiting", flush=True)
+        sys.exit(0)
     root = tk.Tk()
     app  = AIApp(root)
+    _hold.update(root=root, app=app)
+    if _bg:
+        app._start_background()
     root.mainloop()

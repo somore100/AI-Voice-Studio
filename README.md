@@ -109,6 +109,8 @@ curl http://127.0.0.1:8765/v1/audio/transcriptions -F file=@hello.wav -F model=w
 
 Endpoints: `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/audio/translations`, `/v1/models`, `/v1/voices`. Extra speech fields: `language`, `pitch`, `volume`, `depth`. Transcriptions return segment times by default and a `words` list (`word`, `start`, `end`) when you ask for word granularity.
 
+**Start automatically:** in the Local API section, *Start when the app opens* turns the server on at launch, and *When I log in to this computer* can open the app, or run it **in the background** (no window, API only). Launch the app again to bring the hidden window back; closing it then asks whether to keep running. This starts at login, not before you sign in. Everything the app prints is also written, with timestamps, to `app.log` in the settings folder (*Open log* button), which is how you check a background run.
+
 ## 🗂️ Project layout
 
 | File | Purpose |
@@ -132,7 +134,7 @@ Endpoints: `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/audio/translatio
 
 ## 🧭 What's next
 
-**Shipped recently:** faster voice changer (fast-Whisper warm-up, sentence-by-sentence speech, Vosk recognizes while you talk), click / typing / hallucination filtering, extra speed and pitch for selected text, Live Pitch and virtual mic code for Windows and macOS, in-app **Leave Feedback**, word timestamps in the Local API.
+**Shipped recently:** start the Local API at launch / login (also in the background), a log file, faster voice changer (fast-Whisper warm-up, sentence-by-sentence speech, Vosk recognizes while you talk), click / typing / hallucination filtering, extra speed and pitch for selected text, Live Pitch and virtual mic code for Windows and macOS, in-app **Leave Feedback**, word timestamps in the Local API.
 
 **Next up**
 * Test the Windows and macOS builds on real machines (virtual microphone, Live Pitch)
