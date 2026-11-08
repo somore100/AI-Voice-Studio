@@ -4798,6 +4798,11 @@ def _build_api_frame(self):
     self._api_copy_btn.pack(side="left", padx=2)
     ttk.Checkbutton(r2, text="Start when the app opens",
                     variable=self.api_auto_var).pack(side="left", padx=12)
+    self.api_token_var.trace_add("write", lambda *_: _prefs_set(
+        "api_token", self.api_token_var.get().strip()))
+    self.api_port_var.trace_add("write", lambda *_: (
+        _prefs_set("api_port", int(self.api_port_var.get()))
+        if self.api_port_var.get().strip().isdigit() else None))
     self.api_auto_var.trace_add("write", lambda *_: _prefs_set(
         "api_autostart", bool(self.api_auto_var.get())))
     r3 = tk.Frame(f, bg=CARD); r3.pack(fill="x", padx=2, pady=3)
