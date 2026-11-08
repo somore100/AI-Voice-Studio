@@ -102,9 +102,12 @@ Other programs can use this app's voices and Whisper instead of installing their
 curl http://127.0.0.1:8765/v1/audio/speech -H "Content-Type: application/json" \
   -d '{"model":"kokoro","voice":"af_heart","input":"Hello there"}' -o hello.wav
 curl http://127.0.0.1:8765/v1/audio/transcriptions -F file=@hello.wav -F model=whisper-1
+# word-level times (for karaoke captions / sync): verbose_json + word granularity
+curl http://127.0.0.1:8765/v1/audio/transcriptions -F file=@hello.wav -F model=whisper-1 \
+  -F response_format=verbose_json -F "timestamp_granularities[]=word"
 ```
 
-Endpoints: `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/audio/translations`, `/v1/models`, `/v1/voices`. Extra speech fields: `language`, `pitch`, `volume`, `depth`.
+Endpoints: `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/audio/translations`, `/v1/models`, `/v1/voices`. Extra speech fields: `language`, `pitch`, `volume`, `depth`. Transcriptions return segment times by default and a `words` list (`word`, `start`, `end`) when you ask for word granularity.
 
 ## 🗂️ Project layout
 
@@ -124,13 +127,33 @@ Endpoints: `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/audio/translatio
 
 * On Windows and macOS the virtual microphone needs [VB-Cable](https://vb-audio.com/Cable/) / [BlackHole](https://existential.audio/blackhole/) installed first (Linux creates it automatically). This path is new and has had little testing. Live Pitch now also uses PyAudio output there, equally untested.
 * Depth and the other effects are applied after speech is generated, so extreme settings can sound slightly metallic.
+* Voice changer with Whisper still waits for the end of a phrase; only Vosk recognizes while you speak.
 * A full test of the packaged builds takes 45-60 minutes, so Windows and macOS builds are tested less often than Linux.
 
 ## 🧭 What's next
 
-* Test the Windows / macOS virtual microphone on real machines
-* Test Live Pitch on Windows and macOS (implemented, untested)
-* Even lower voice-changer delay (streaming speech recognition)
+**Shipped recently:** faster voice changer (fast-Whisper warm-up, sentence-by-sentence speech, Vosk recognizes while you talk), click / typing / hallucination filtering, extra speed and pitch for selected text, Live Pitch and virtual mic code for Windows and macOS, in-app **Leave Feedback**, word timestamps in the Local API.
+
+**Next up**
+* Test the Windows and macOS builds on real machines (virtual microphone, Live Pitch)
+* Automated Windows / macOS builds on GitHub Actions, so releases need less manual testing
+
+**Lower voice-changer delay**
+* Whisper still waits for the end of your phrase; transcribe while you talk (partial results) the way Vosk already does
+* Smarter end-of-phrase detection with a real voice-activity model instead of an energy threshold
+* Start speaking before the whole sentence is synthesized (chunked TTS)
+
+**Quality**
+* Cleaner pitch / depth effects at extreme settings (less metallic)
+* Optional larger Vosk models for better live accuracy
+
+**Local API**
+* Streamed speech responses for long text
+* Make the optional token easier to set up
+
+**Housekeeping**
+* Automated tests for the audio effects, report building and API parsing
+* Python 3.13 support (the live recognizer currently uses `audioop`)
 
 ## 🤝 Contributing
 

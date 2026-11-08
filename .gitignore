@@ -20,3 +20,6 @@ mic_level_test.py
 .venv/
 CLAUDE.md
 claude.md
+
+# sync-tool conflict copies
+*.sync-conflict-*

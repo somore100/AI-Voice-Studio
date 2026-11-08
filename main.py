@@ -4691,7 +4691,7 @@ class _ApiBackend:
             raise
         return tmp.name
 
-    def stt(self, wav_path, model, language, translate):
+    def stt(self, wav_path, model, language, translate, words=False):
         import api_server
         import numpy as np
         import soundfile as sf
@@ -4707,28 +4707,50 @@ class _ApiBackend:
                 raise api_server.ApiError(404, f"No Vosk model for language '{lang or 'en'}'.")
             from vosk import KaldiRecognizer
             rec = KaldiRecognizer(get_vosk_model(vlang), 16000)
+            if words:
+                rec.SetWords(True)
             pcm = (np.clip(raw, -1, 1) * 32767).astype(np.int16).tobytes()
+            wlist = []
             for i in range(0, len(pcm), 8000):
-                rec.AcceptWaveform(pcm[i:i + 8000])
-            text = json.loads(rec.FinalResult()).get("text", "").strip()
-            return {"text": text, "language": vlang, "segments": []}
+                if rec.AcceptWaveform(pcm[i:i + 8000]) and words:
+                    wlist += json.loads(rec.Result()).get("result", [])
+            fin = json.loads(rec.FinalResult())
+            wlist += fin.get("result", [])
+            text = " ".join(w["word"] for w in wlist) if words and wlist else fin.get("text", "").strip()
+            out = {"text": text, "language": vlang, "segments": []}
+            if words:
+                out["words"] = [{"word": w["word"], "start": float(w["start"]),
+                                 "end": float(w["end"])} for w in wlist]
+            return out
         task = "translate" if translate else "transcribe"
         if FASTER_WHISPER_AVAILABLE:
             segs, info = get_fwhisper_model().transcribe(
                 raw, language=lang, task=task, beam_size=1, temperature=0.0,
-                condition_on_previous_text=False)
+                condition_on_previous_text=False, word_timestamps=bool(words))
+            segs = list(segs)
+            wl = [{"word": w.word.strip(), "start": float(w.start), "end": float(w.end)}
+                  for s in segs for w in (s.words or [])] if words else None
             segs = [{"start": float(s.start), "end": float(s.end), "text": s.text} for s in segs]
-            return {"text": "".join(s["text"] for s in segs).strip(),
-                    "language": info.language, "segments": segs}
+            out = {"text": "".join(s["text"] for s in segs).strip(),
+                   "language": info.language, "segments": segs}
+            if words:
+                out["words"] = wl
+            return out
         if not WHISPER_AVAILABLE:
             raise api_server.ApiError(503, "Whisper is not installed.")
         kw = {"language": lang} if lang else {}
         res = get_whisper_model().transcribe(
             raw, fp16=False, temperature=0.0, condition_on_previous_text=False,
-            task=task, **kw)
+            task=task, word_timestamps=bool(words), **kw)
         segs = [{"start": float(s["start"]), "end": float(s["end"]), "text": s["text"]}
                 for s in res.get("segments", [])]
-        return {"text": res["text"].strip(), "language": res.get("language"), "segments": segs}
+        out = {"text": res["text"].strip(), "language": res.get("language"), "segments": segs}
+        if words:
+            out["words"] = [{"word": w["word"].strip(), "start": float(w["start"]),
+                             "end": float(w["end"])}
+                            for s in res.get("segments", []) for w in (s.get("words") or [])
+                            if w.get("start") is not None and w.get("end") is not None]
+        return out
 
 
 def _build_api_frame(self):
