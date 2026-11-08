@@ -5,6 +5,7 @@ OpenAI-compatible endpoints (so "custom / local OpenAI provider" settings work):
     GET  /v1/models
     POST /v1/audio/speech          {"input", "model", "voice", "speed", "response_format"}
     POST /v1/audio/transcriptions  multipart: file, model, language, response_format
+                                   (+ timestamp_granularities[]=word with verbose_json for word times)
     POST /v1/audio/translations    multipart: file (spoken audio -> English text)
 Extras:
     GET  /v1/voices   GET /health
@@ -121,7 +122,9 @@ def parse_multipart(content_type, body):
         if fn is not None:
             files[name] = (fn, payload)
         else:
-            fields[name] = payload.decode("utf-8", "replace").strip()
+            val = payload.decode("utf-8", "replace").strip()
+            # repeated fields (e.g. timestamp_granularities[] = word, segment) are joined
+            fields[name] = fields[name] + "," + val if name in fields else val
     return fields, files
 
 
@@ -152,7 +155,9 @@ class ApiServer:
         models() -> {"tts": [str], "stt": [str]}
         voices() -> [dict(engine, voice, label, gender, lang)]
         tts(text, model, voice, language, speed, pitch, volume, depth) -> wav path
-        stt(wav16k_path, model, language, translate) -> {"text", "language", "segments"?}
+        stt(wav16k_path, model, language, translate[, words=True]) ->
+            {"text", "language", "segments"?, "words"?: [{"word","start","end"}]}
+            (`words=True` is only passed when the client asked for word timestamps)
     Backend methods may raise ApiError. They are called one at a time."""
 
     def __init__(self, backend, port=8765, token="", log=print):
@@ -293,10 +298,14 @@ class ApiServer:
                     raise ApiError(400, "Missing 'file'.")
                 fn, data = files["file"]
                 wav = decode_to_wav16k(data, fn)
+                gran = (fields.get("timestamp_granularities[]")
+                        or fields.get("timestamp_granularities") or "").lower()
+                want_words = "word" in [g.strip() for g in gran.split(",")]
                 try:
                     with api._lock:
+                        extra = {"words": True} if want_words else {}
                         res = api.backend.stt(wav, fields.get("model"),
-                                              fields.get("language") or None, translate)
+                                              fields.get("language") or None, translate, **extra)
                 finally:
                     try: os.remove(wav)
                     except OSError: pass
@@ -314,9 +323,12 @@ class ApiServer:
                         out.append(s["text"].strip() + "\n")
                     self._send(200, "\n".join(out), "text/plain; charset=utf-8")
                 elif fmt == "verbose_json":
-                    self._send(200, {"task": "translate" if translate else "transcribe",
-                                     "language": res.get("language"), "text": text,
-                                     "segments": segs})
+                    out = {"task": "translate" if translate else "transcribe",
+                           "language": res.get("language"), "text": text,
+                           "segments": segs}
+                    if want_words:
+                        out["words"] = res.get("words") or []
+                    self._send(200, out)
                 else:
                     self._send(200, {"text": text})
 
