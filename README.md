@@ -8,6 +8,7 @@ AI-Voice-Studio is a desktop app that puts text-to-speech, speech-to-text, subti
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![License](https://img.shields.io/badge/license-Source--Available%20v1.0-orange)
 ![Status](https://img.shields.io/badge/status-active%20development-green)
+[![Architecture diagram](https://gitdiagram.com/diagram-badge.svg)](https://gitdiagram.com/somore100/ai-voice-studio?utm_source=readme&utm_medium=badge)
 
 <img width="817" height="695" alt="AI Voice Studio" src="https://github.com/user-attachments/assets/bda9a7f6-6b42-42c5-9651-b0b3ad299cc3" />
 
