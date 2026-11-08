@@ -26,7 +26,9 @@ INSTANCE_PORT = 47653           # loopback only; used to raise the already-runni
 def launch_command(background, script=None):
     """argv list that starts this app (works from source and when frozen)."""
     if getattr(sys, "frozen", False):
-        cmd = [sys.executable]
+        # An AppImage runs from a temporary mount that changes every launch;
+        # $APPIMAGE is the real, stable file the user started.
+        cmd = [os.environ.get("APPIMAGE") or sys.executable]
     else:
         exe = sys.executable
         if sys.platform == "win32" and exe.lower().endswith("python.exe"):
@@ -97,7 +99,10 @@ def set_login_mode(mode, script=None):
             _rm(path)
             return path
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        workdir = os.path.dirname(os.path.abspath(script or sys.argv[0]))
+        if getattr(sys, "frozen", False):       # __file__ is a temp unpack dir here
+            workdir = os.path.dirname(os.path.abspath(cmd[0]))
+        else:
+            workdir = os.path.dirname(os.path.abspath(script or sys.argv[0]))
         with open(path, "w", encoding="utf-8") as f:
             f.write("[Desktop Entry]\nType=Application\n"
                     f"Name={APP_TITLE}\n"
