@@ -8,7 +8,8 @@ running with the API on. If it is not, this server starts it in the background
 
 Run (the client launches it for you):
 
-    /path/to/venv/bin/python /path/to/mcp_server.py
+    /path/to/venv/bin/python /path/to/mcp_server.py        # from source
+    AI_Voice_Studio.AppImage --mcp                         # packaged build (any platform)
 
 Settings (all optional; by default it reads the port and key the app saved):
     AVS_API_URL         e.g. http://127.0.0.1:8765/v1
@@ -100,14 +101,19 @@ def ensure_running():
         return
     except ConnectionError:
         pass
-    main_py = os.path.join(HERE, "main.py")
-    if os.environ.get("AVS_MCP_NO_LAUNCH") or not os.path.exists(main_py):
+    if getattr(sys, "frozen", False):       # packaged app (AppImage: $APPIMAGE is the real file)
+        cmd = [os.environ.get("APPIMAGE") or sys.executable, "--background"]
+        workdir = os.path.dirname(os.path.abspath(cmd[0]))
+    else:
+        main_py = os.path.join(HERE, "main.py")
+        cmd, workdir = ([sys.executable, main_py, "--background"], HERE) \
+            if os.path.exists(main_py) else (None, HERE)
+    if os.environ.get("AVS_MCP_NO_LAUNCH") or cmd is None:
         raise ToolError("AI Voice Studio is not running. Open it and press 'Start API server' "
                         "in the Local API section (or set it to run in the background at login).")
     log("API not reachable - starting AI Voice Studio in the background")
-    subprocess.Popen([sys.executable, main_py, "--background"], cwd=HERE,
-                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                     stderr=subprocess.DEVNULL, start_new_session=True)
+    subprocess.Popen(cmd, cwd=workdir, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                     stderr=subprocess.DEVNULL, start_new_session=(os.name != "nt"))
     deadline = time.time() + 90                   # the models take a while to load
     while time.time() < deadline:
         time.sleep(1.5)

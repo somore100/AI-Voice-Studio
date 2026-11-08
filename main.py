@@ -1,6 +1,14 @@
 import os
 import sys
 
+# MCP mode: `AI_Voice_Studio --mcp` is an MCP server on stdin/stdout. It must run
+# before anything else loads (the libraries below print banners that would corrupt
+# the protocol, and the AI models take seconds to import).
+if "--mcp" in sys.argv[1:]:
+    import mcp_server
+    mcp_server.main()
+    sys.exit(0)
+
 # ── AppImage: find the host's ALSA plugins (pipewire/pulse) ────────────────
 _ALSA_PLUGIN_MISSING = False
 if sys.platform.startswith("linux") and getattr(sys, "frozen", False) \
@@ -4818,6 +4826,8 @@ def _build_api_frame(self):
     cb.pack(side="left", padx=6)
     cb.bind("<<ComboboxSelected>>", lambda e: self._login_mode_apply())
     self._btn(r3, "Open log", self._open_log, color=SURFACE, padx=8).pack(side="left", padx=4)
+    self._btn(r3, "Copy MCP command", self._mcp_command_copy, color=SURFACE,
+              padx=8).pack(side="left", padx=2)
     self._label(f, "Background mode starts the app hidden and turns the Local API on. Open the "
                    "app again to show its window; closing it then asks whether to keep running. "
                    "It starts at login, not before you sign in.",
@@ -4923,6 +4933,23 @@ def _api_stop(self):
         pass
 
 
+def _mcp_command_copy(self):
+    """Put the 'claude mcp add' command for THIS install on the clipboard."""
+    import shlex
+    if getattr(sys, "frozen", False):
+        argv = [os.environ.get("APPIMAGE") or sys.executable, "--mcp"]
+    else:
+        argv = [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                             "mcp_server.py")]
+    quote = subprocess.list2cmdline if sys.platform == "win32" else shlex.join
+    cmd = "claude mcp add --scope user ai-voice-studio -- " + quote(argv)
+    self.root.clipboard_clear(); self.root.clipboard_append(cmd); self.root.update()
+    print(f"[AVS] MCP command copied: {cmd}", flush=True)
+    self._api_status.config(
+        text="Copied. Paste it in a terminal to add AI Voice Studio to Claude Code "
+             "(other MCP clients: use the same command and arguments).", fg=GREEN)
+
+
 def _login_mode_apply(self):
     mode = self._login_modes.get(self.login_mode_var.get(), "off")
     try:
@@ -4973,6 +5000,7 @@ def _start_background(self):
     self.root.after(2500, lambda: self._api_ensure(quiet=True))
 
 
+AIApp._mcp_command_copy = _mcp_command_copy
 AIApp._login_mode_apply = _login_mode_apply
 AIApp._open_log = _open_log
 AIApp._show_window = _show_window

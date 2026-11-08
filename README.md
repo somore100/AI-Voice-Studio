@@ -123,7 +123,18 @@ Claude Code (run once; use your own paths, and the venv's Python):
 claude mcp add ai-voice-studio -- /path/to/ai_voice_studio/venv/bin/python /path/to/ai_voice_studio/mcp_server.py
 ```
 
-Optional environment variables: `AVS_API_URL`, `AVS_API_KEY`, `AVS_OUTPUT_DIR`, `AVS_MCP_NO_LAUNCH=1`. It runs from source with Python (it is not inside the packaged app).
+**Packaged builds** have it built in: run the app with `--mcp` instead of a script. Easiest: in the app's **Local API** section press **Copy MCP command** and paste it in a terminal. By hand:
+
+```bash
+# Linux AppImage
+claude mcp add --scope user ai-voice-studio -- /path/to/AI_Voice_Studio.AppImage --mcp
+# macOS
+claude mcp add --scope user ai-voice-studio -- "/Applications/AI Voice Studio.app/Contents/MacOS/AI_Voice_Studio" --mcp
+# Windows
+claude mcp add --scope user ai-voice-studio -- "C:\Program Files\AI Voice Studio\AI_Voice_Studio.exe" --mcp
+```
+
+Optional environment variables: `AVS_API_URL`, `AVS_API_KEY`, `AVS_OUTPUT_DIR`, `AVS_MCP_NO_LAUNCH=1`.
 
 ## 🗂️ Project layout
 
