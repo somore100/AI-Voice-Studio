@@ -94,7 +94,7 @@ a = Analysis(
         # repeatedly hit cases where 'should be automatic' wasn't.
         'engines', 'engines.base', 'engines.paths', 'engines.registry',
         'engines.coqui_vctk', 'engines.coqui_xtts', 'engines.kokoro',
-        'audio_fx', 'live_pitch', 'curve_editor', 'voice_finder',
+        'audio_fx', 'live_pitch', 'curve_editor', 'voice_finder', 'api_server',
         'TTS', 'TTS.api', 'TTS.tts', 'TTS.tts.configs.xtts_config',
         'TTS.tts.configs', 'TTS.tts.models', 'TTS.tts.utils',
         'TTS.tts.layers', 'TTS.utils.audio', 'TTS.utils.io',
