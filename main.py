@@ -210,7 +210,7 @@ import autostart
 
 APP_LOG_PATH = None     # set at startup (see __main__); shown by "Open log"
 APP_NAME    = "AI Voice Studio"
-APP_VERSION = "1.0"
+APP_VERSION = "1.1.0"
 SUPPORT_EMAIL = "support.somore100@gmail.com"
 # Relay web app that forwards feedback to SUPPORT_EMAIL (same Google Apps Script relay as
 # Arrows of War; see RELAY_APPS_SCRIPT in feedback.py). It can only receive reports and holds

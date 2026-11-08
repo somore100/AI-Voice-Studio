@@ -173,6 +173,6 @@ app = BUNDLE(
     bundle_identifier='com.domore100.aivoicestudio',
     info_plist={
         'NSMicrophoneUsageDescription': 'AI Voice Studio needs microphone access for Speech-to-Text.',
-        'CFBundleShortVersionString': '1.0.0',
+        'CFBundleShortVersionString': '1.1.0',
     },
 )
