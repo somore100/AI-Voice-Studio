@@ -205,6 +205,16 @@ _apply_agreed_tos_env_vars()
 # ──────────────────────────────────────────────────────────────
 #  COLOURS
 # ──────────────────────────────────────────────────────────────
+APP_NAME    = "AI Voice Studio"
+APP_VERSION = "1.0"
+SUPPORT_EMAIL = "support.somore100@gmail.com"
+# Relay web app that forwards feedback to SUPPORT_EMAIL (same Google Apps Script relay as
+# Arrows of War; see RELAY_APPS_SCRIPT in feedback.py). It can only receive reports and holds
+# no password, so shipping the URL is fine. Env var overrides; set empty to use the mail app.
+FEEDBACK_ENDPOINT = os.environ.get(
+    "AVS_FEEDBACK_ENDPOINT",
+    "https://script.google.com/macros/s/AKfycbzhF5zd0GIdYDt6hThcgUukw7gIwyeHoXqZRydS8o87d5DWmEArAc2N64_T_ZcFqEye/exec")
+
 BG      = "#1a1b2e"
 CARD    = "#1e1f33"
 SURFACE = "#2a2b45"
@@ -2360,8 +2370,18 @@ class AIApp:
         f = tk.Frame(self._inner, bg=BG); f.pack(fill="x", padx=10, pady=(4,14))
         tk.Label(f, text="made by domore100", bg=BG, fg=FG_DIM,
                  font=("Segoe UI",8)).pack(side="right", padx=(0,2))
-        tk.Label(f, text="v1  |", bg=BG, fg=BORDER,
+        tk.Label(f, text=f"v{APP_VERSION}  |", bg=BG, fg=BORDER,
                  font=("Segoe UI",8)).pack(side="right", padx=(0,4))
+        self._btn(f, "Leave Feedback", self.open_feedback, color=SURFACE,
+                  padx=10, pady=3).pack(side="left")
+
+    def open_feedback(self):
+        import feedback
+        feedback.open_feedback(
+            self.root, APP_NAME, APP_VERSION, SUPPORT_EMAIL,
+            colors={"bg": BG, "card": CARD, "surface": SURFACE, "border": BORDER,
+                    "fg": FG, "dim": FG_DIM, "accent": CYAN, "good": GREEN, "bad": RED},
+            endpoint=FEEDBACK_ENDPOINT or None)
 
     # NOTE: The Model Download Manager UI/logic (_build_models_frame,
     # _check_models, _download_missing, etc.) lives below as module-level
@@ -4237,6 +4257,22 @@ def _vc_synth(self, cfg, text, out):
         TTS_ENGINES["xtts"].synthesize(text, cfg["voice"], out, cfg["xtts_lang"])
 
 
+# Things Whisper "hears" in silence / keyboard / mouse noise
+_VC_JUNK = {"you", "", "bye", "thanks for watching", "thank you for watching",
+            "uh", "um", "hmm", "mm"}
+
+
+def _voiced_seconds(pcm16k, threshold):
+    """Seconds of 16 kHz mono int16 audio whose 20 ms frames are louder than
+    `threshold` (the recognizer's energy threshold). A click or key press is a
+    few ms; speech is several hundred."""
+    import audioop
+    step = 640                                  # 20 ms at 16 kHz, 2 bytes/sample
+    n = sum(1 for i in range(0, len(pcm16k) - step + 1, step)
+            if audioop.rms(pcm16k[i:i + step], 2) > threshold)
+    return n * 0.02
+
+
 def _vc_pipeline(self):
     """STT -> TTS voice changer. This thread only listens (mic opened and
     calibrated once); a second worker thread does hear/speak/play so the
@@ -4314,8 +4350,10 @@ def _vc_pipeline(self):
                     segs, info = get_fwhisper_model().transcribe(
                         raw, language=cfg.get("wlang") or None, beam_size=1,
                         temperature=0.0, condition_on_previous_text=False,
-                        without_timestamps=True)
-                    text = "".join(sg.text for sg in segs).strip()
+                        without_timestamps=True, vad_filter=True,
+                        vad_parameters={"min_silence_duration_ms": 300})
+                    text = "".join(sg.text for sg in segs
+                                   if getattr(sg, "no_speech_prob", 0.0) < 0.6).strip()
                     if not cfg.get("wlang"):
                         lang_used = "auto->" + str(info.language)
                 else:
@@ -4326,9 +4364,16 @@ def _vc_pipeline(self):
                         condition_on_previous_text=False,
                         without_timestamps=True, **kw)
                     text = res["text"].strip()
+                    _sg = res.get("segments") or []
+                    if _sg and all(g.get("no_speech_prob", 0) > 0.6
+                                   and g.get("avg_logprob", 0) < -1.0 for g in _sg):
+                        text = ""                   # Whisper itself says: no speech
                     if not cfg.get("wlang"):
                         lang_used = "auto->" + str(res.get("language", "?"))
                 t_hear = time.time()
+                if text.lower().strip(" .!?,-") in _VC_JUNK:
+                    print(f"[AVS] VC: dropped noise hallucination {text!r}", flush=True)
+                    text = ""
                 if not text or not alive():
                     continue
                 print(f"[AVS] VC heard: \"{text}\" (lang={lang_used})", flush=True)
@@ -4489,7 +4534,10 @@ def _vc_pipeline(self):
                         continue
                     if pcm is None:
                         pcm = audio.get_raw_data(convert_rate=16000, convert_width=2)
-                        short = len(pcm) < 8000     # < 0.25 s: a click, not speech
+                        short = _voiced_seconds(pcm, rec.energy_threshold) < 0.3
+                        if short:
+                            print("[AVS] VC: ignored a short noise (click/typing)",
+                                  flush=True)
                     if short:
                         continue
                     item = (pcm, time.time())
@@ -4508,6 +4556,12 @@ def _vc_pipeline(self):
                             pass
         except Exception as e:
             print(f"[AVS] VC capture error: {e!r}", flush=True)
+            if isinstance(e, RuntimeError) and alive():
+                # Muted / unopenable mic won't fix itself: stop instead of retrying forever
+                msg = str(e)
+                fail(msg)
+                self.root.after(0, lambda m=msg: messagebox.showerror("Microphone Error", m))
+                return
             if alive():
                 st(f"Error: {str(e)[:50]}", RED)
                 time.sleep(1)
