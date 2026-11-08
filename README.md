@@ -111,6 +111,20 @@ Endpoints: `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/audio/translatio
 
 **Start automatically:** in the Local API section, *Start when the app opens* turns the server on at launch, and *When I log in to this computer* can open the app, or run it **in the background** (no window, API only). Launch the app again to bring the hidden window back; closing it then asks whether to keep running. This starts at login, not before you sign in. Everything the app prints is also written, with timestamps, to `app.log` in the settings folder (*Open log* button), which is how you check a background run.
 
+## 🤖 MCP server (use it from Claude and other AI tools)
+
+`mcp_server.py` lets MCP clients such as Claude Code or Claude Desktop use your local voices: *"say this out loud with AI Voice Studio"*, *"transcribe this recording"*. It is a small bridge to the Local API (no extra pip package), reads the port and key the app saved, and starts the app in the background if it is not running.
+
+Tools: `speak` (text to a WAV in your output folder, never overwriting), `list_voices`, `transcribe` (optionally with word timestamps), `status`.
+
+Claude Code (run once; use your own paths, and the venv's Python):
+
+```bash
+claude mcp add ai-voice-studio -- /path/to/ai_voice_studio/venv/bin/python /path/to/ai_voice_studio/mcp_server.py
+```
+
+Optional environment variables: `AVS_API_URL`, `AVS_API_KEY`, `AVS_OUTPUT_DIR`, `AVS_MCP_NO_LAUNCH=1`. It runs from source with Python (it is not inside the packaged app).
+
 ## 🗂️ Project layout
 
 | File | Purpose |
@@ -134,7 +148,7 @@ Endpoints: `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/audio/translatio
 
 ## 🧭 What's next
 
-**Shipped recently:** start the Local API at launch / login (also in the background), a log file, faster voice changer (fast-Whisper warm-up, sentence-by-sentence speech, Vosk recognizes while you talk), click / typing / hallucination filtering, extra speed and pitch for selected text, Live Pitch and virtual mic code for Windows and macOS, in-app **Leave Feedback**, word timestamps in the Local API.
+**Shipped recently:** MCP server for Claude and other AI tools, start the Local API at launch / login (also in the background), a log file, faster voice changer (fast-Whisper warm-up, sentence-by-sentence speech, Vosk recognizes while you talk), click / typing / hallucination filtering, extra speed and pitch for selected text, Live Pitch and virtual mic code for Windows and macOS, in-app **Leave Feedback**, word timestamps in the Local API.
 
 **Next up**
 * Test the Windows and macOS builds on real machines (virtual microphone, Live Pitch)
