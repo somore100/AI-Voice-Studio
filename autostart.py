@@ -3,8 +3,8 @@
 Login modes:
     "off"         nothing happens at login
     "window"      the app opens normally when you log in
-    "background"  the app starts with `--background` (no window); the app decides
-                  what to do then (here: run the Local API)
+    "background"  the app starts with `--headless`: the engine and Local API run with
+                  no window at all; opening the app later attaches to it
 
 This runs when the user LOGS IN to their desktop session, not at machine boot
 before any login - that would need a system service, which a desktop app should
@@ -18,8 +18,10 @@ import threading
 
 APP_ID = "ai-voice-studio"
 APP_TITLE = "AI Voice Studio"
-BACKGROUND_FLAG = "--background"
+BACKGROUND_FLAG = "--headless"                  # engine only, no window
+LEGACY_FLAGS = ("--background",)                # older login entries; treated as --headless
 INSTANCE_PORT = 47653           # loopback only; used to raise the already-running app
+HEADLESS_PORT = 47654           # loopback only; the headless engine's control port
 
 
 # ── what gets launched ────────────────────────────────────────────────────
@@ -62,6 +64,11 @@ def _mac_file():
 _WIN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
 
+def _is_bg(where):
+    """True if the launch line (str) or argument list contains a headless flag."""
+    return any(f in where for f in (BACKGROUND_FLAG,) + LEGACY_FLAGS)
+
+
 def get_login_mode():
     """Reads the real OS state: "off" | "window" | "background"."""
     try:
@@ -71,17 +78,17 @@ def get_login_mode():
             if "X-GNOME-Autostart-enabled=false" in txt or "Hidden=true" in txt:
                 return "off"
             line = next((ln for ln in txt.splitlines() if ln.startswith("Exec=")), "")
-            return "background" if BACKGROUND_FLAG in line else "window"
+            return "background" if _is_bg(line) else "window"
         if sys.platform == "darwin":
             import plistlib
             with open(_mac_file(), "rb") as f:
                 args = plistlib.load(f).get("ProgramArguments", [])
-            return "background" if BACKGROUND_FLAG in args else "window"
+            return "background" if _is_bg(args) else "window"
         if sys.platform == "win32":
             import winreg
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _WIN_KEY) as k:
                 val = winreg.QueryValueEx(k, APP_TITLE)[0]
-            return "background" if BACKGROUND_FLAG in val else "window"
+            return "background" if _is_bg(val) else "window"
     except (OSError, ValueError):
         pass
     return "off"
@@ -144,6 +151,24 @@ def _rm(path):
         pass
 
 
+def _listener(port):
+    """Loopback listening socket that can be re-bound right after a restart.
+    POSIX: SO_REUSEADDR (still refuses a second live listener). Windows: there
+    SO_REUSEADDR would let two programs share a port, so use the exclusive flag."""
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        if os.name == "nt":
+            srv.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        else:
+            srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind(("127.0.0.1", port))
+        srv.listen(4)
+    except OSError:
+        srv.close()
+        raise
+    return srv
+
+
 # ── single instance: a second launch just raises the first ────────────────
 def claim_instance(on_show, port=INSTANCE_PORT):
     """Returns (state, socket):
@@ -152,12 +177,9 @@ def claim_instance(on_show, port=INSTANCE_PORT):
         "running"  another instance exists and was asked to show its window -> exit now
         "unknown"  the port is taken by something else -> carry on without single-instance
     """
-    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        srv.bind(("127.0.0.1", port))
-        srv.listen(4)
+        srv = _listener(port)
     except OSError:
-        srv.close()
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=1.5) as c:
                 c.sendall(f"show {APP_ID}\n".encode())
@@ -184,3 +206,64 @@ def claim_instance(on_show, port=INSTANCE_PORT):
 
     threading.Thread(target=serve, daemon=True).start()
     return "owner", srv
+
+
+# ── headless engine: presence / control over a loopback port ──────────────
+def headless_serve(info, on_stop, port=HEADLESS_PORT, ready=None):
+    """Called by the headless engine. Answers "info" (who/where am I) and "stop".
+    `ready` (a threading.Event) gates "info": until it is set the engine answers
+    "starting", so nobody attaches to an API that is not listening yet.
+    Returns the listening socket, or None if another engine already owns the port."""
+    try:
+        srv = _listener(port)
+    except OSError:
+        return None
+
+    def serve():
+        while True:
+            try:
+                conn, _ = srv.accept()
+            except OSError:
+                return
+            with conn:
+                try:
+                    conn.settimeout(1.0)
+                    cmd = conn.recv(64).decode("utf-8", "replace").strip()
+                    if cmd == f"info {APP_ID}" and ready is not None and not ready.is_set():
+                        conn.sendall(b"starting\n")
+                    elif cmd == f"info {APP_ID}":
+                        conn.sendall((f"headless pid={info['pid']} api={info['api']}\n").encode())
+                    elif cmd == f"stop {APP_ID}":
+                        conn.sendall(b"ok\n")
+                        on_stop()
+                except Exception:
+                    pass
+
+    threading.Thread(target=serve, daemon=True).start()
+    return srv
+
+
+def _ask(cmd, port, timeout=1.0):
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=timeout) as c:
+            c.sendall(f"{cmd} {APP_ID}\n".encode())
+            return c.recv(128).decode("utf-8", "replace").strip()
+    except OSError:
+        return ""
+
+
+def headless_probe(port=HEADLESS_PORT):
+    """{"pid": int, "api": int} if a headless engine is running, else None."""
+    ans = _ask("info", port)
+    if not ans.startswith("headless"):
+        return None
+    try:
+        kv = dict(p.split("=", 1) for p in ans.split()[1:])
+        return {"pid": int(kv["pid"]), "api": int(kv["api"])}
+    except (KeyError, ValueError):
+        return None
+
+
+def headless_stop(port=HEADLESS_PORT):
+    """Ask a running headless engine to stop. True if it acknowledged."""
+    return _ask("stop", port).startswith("ok")

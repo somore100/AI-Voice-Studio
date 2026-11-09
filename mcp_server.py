@@ -4,7 +4,7 @@ Lets Claude Code, Claude Desktop and other MCP clients use this app's voices and
 speech recognition: "say that out loud with AI Voice Studio", "transcribe this
 recording". It is a thin bridge to the app's Local API, so the app has to be
 running with the API on. If it is not, this server starts it in the background
-(`main.py --background`) when it can.
+(`main.py --headless`: engine and API, no window) when it can.
 
 Run (the client launches it for you):
 
@@ -43,15 +43,33 @@ def log(*a):
 
 
 # ── finding the app's API ─────────────────────────────────────────────────
-def _prefs():
+def settings_dir():
+    """The app's per-user settings folder (prefs.json, app.log)."""
     if sys.platform == "win32":
         base = os.environ.get("APPDATA") or os.path.expanduser("~")
     elif sys.platform == "darwin":
         base = os.path.expanduser("~/Library/Application Support")
     else:
         base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return os.path.join(base, "AI Voice Studio")
+
+
+def app_command(flag):
+    """argv that starts AI Voice Studio with `flag` (--headless, --mcp ...), or None.
+    AVS_APP_CMD overrides the program (for development and tests)."""
+    override = os.environ.get("AVS_APP_CMD")
+    if override:
+        import shlex
+        return shlex.split(override) + [flag]
+    if getattr(sys, "frozen", False):       # packaged app (AppImage: $APPIMAGE is the real file)
+        return [os.environ.get("APPIMAGE") or sys.executable, flag]
+    main_py = os.path.join(HERE, "main.py")
+    return [sys.executable, main_py, flag] if os.path.exists(main_py) else None
+
+
+def _prefs():
     try:
-        with open(os.path.join(base, "AI Voice Studio", "prefs.json"), encoding="utf-8") as f:
+        with open(os.path.join(settings_dir(), "prefs.json"), encoding="utf-8") as f:
             d = json.load(f)
         return d if isinstance(d, dict) else {}
     except (OSError, ValueError):
@@ -101,16 +119,12 @@ def ensure_running():
         return
     except ConnectionError:
         pass
-    if getattr(sys, "frozen", False):       # packaged app (AppImage: $APPIMAGE is the real file)
-        cmd = [os.environ.get("APPIMAGE") or sys.executable, "--background"]
-        workdir = os.path.dirname(os.path.abspath(cmd[0]))
-    else:
-        main_py = os.path.join(HERE, "main.py")
-        cmd, workdir = ([sys.executable, main_py, "--background"], HERE) \
-            if os.path.exists(main_py) else (None, HERE)
+    cmd = app_command("--headless")
     if os.environ.get("AVS_MCP_NO_LAUNCH") or cmd is None:
         raise ToolError("AI Voice Studio is not running. Open it and press 'Start API server' "
                         "in the Local API section (or set it to run in the background at login).")
+    workdir = HERE if os.environ.get("AVS_APP_CMD") or not getattr(sys, "frozen", False) \
+        else os.path.dirname(os.path.abspath(cmd[0]))
     log("API not reachable - starting AI Voice Studio in the background")
     subprocess.Popen(cmd, cwd=workdir, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                      stderr=subprocess.DEVNULL, start_new_session=(os.name != "nt"))
