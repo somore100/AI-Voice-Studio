@@ -107,9 +107,11 @@ curl http://127.0.0.1:8765/v1/audio/transcriptions -F file=@hello.wav -F model=w
   -F response_format=verbose_json -F "timestamp_granularities[]=word"
 ```
 
+Full reference and how to structure an integration: [docs/API.md](docs/API.md); working examples (curl, Python, OpenAI SDK, Node) are in [examples/](examples/).
+
 Endpoints: `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/audio/translations`, `/v1/models`, `/v1/voices`. Extra speech fields: `language`, `speed` (0.25-4), `pitch` (-12 to 12 semitones), `volume` (0-2), `depth` (-8 to 8, positive is deeper). Transcriptions return segment times by default and a `words` list (`word`, `start`, `end`) when you ask for word granularity.
 
-**Start automatically:** in the Local API section, *Start when the app opens* turns the server on at launch, and *When I log in to this computer* can open the app, or run it **in the background** (no window, API only). Launch the app again to bring the hidden window back; closing it then asks whether to keep running. This starts at login, not before you sign in. Everything the app prints is also written, with timestamps, to `app.log` in the settings folder (*Open log* button), which is how you check a background run.
+**Start automatically / without a window:** in the Local API section, *Start when the app opens* turns the server on at launch, and *When I log in to this computer* can open the app, or **run the engine in the background with no window at all** (`AI_Voice_Studio --headless`). Open the app any time and its window attaches to the running engine; closing the window leaves the engine running, and *Stop background engine* ends it. This starts at login, not before you sign in. Everything the app prints is also written, with timestamps, to `app.log` in the settings folder (*Open log* button), which is how you check a background run.
 
 ## 🤖 MCP server (use it from Claude and other AI tools)
 
@@ -170,7 +172,7 @@ It starts the app in the background if needed, then prints PASS / FAIL per step 
 
 ## 🧭 What's next
 
-**Shipped recently:** end-to-end self-test (`--selftest`), MCP server for Claude and other AI tools, start the Local API at launch / login (also in the background), a log file, faster voice changer (fast-Whisper warm-up, sentence-by-sentence speech, Vosk recognizes while you talk), click / typing / hallucination filtering, extra speed and pitch for selected text, Live Pitch and virtual mic code for Windows and macOS, in-app **Leave Feedback**, word timestamps in the Local API.
+**Shipped recently:** headless engine mode, API docs and examples, end-to-end self-test (`--selftest`), MCP server for Claude and other AI tools, start the Local API at launch / login (also in the background), a log file, faster voice changer (fast-Whisper warm-up, sentence-by-sentence speech, Vosk recognizes while you talk), click / typing / hallucination filtering, extra speed and pitch for selected text, Live Pitch and virtual mic code for Windows and macOS, in-app **Leave Feedback**, word timestamps in the Local API.
 
 **Next up**
 * Test the Windows and macOS builds on real machines (virtual microphone, Live Pitch)

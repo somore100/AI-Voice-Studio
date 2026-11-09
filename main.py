@@ -951,15 +951,6 @@ class AIApp:
                 v.trace_add("write", self._settings_schedule)
 
     def _on_close_request(self):
-        if getattr(self, "_bg_instance", False):
-            if messagebox.askyesno(
-                    "Keep running?",
-                    "Keep AI Voice Studio running in the background?\n\n"
-                    "Yes: hide this window; the Local API stays on.\n"
-                    "No: quit completely."):
-                self.root.withdraw()
-                print("[AVS] window hidden, still running in the background", flush=True)
-                return
         if self._download_in_progress:
             proceed = messagebox.askyesno(
                 "Download in progress",
@@ -1729,30 +1720,7 @@ class AIApp:
         self._vf_win = voice_finder.VoiceFinder(self, theme, cache)
 
     def _vf_catalog(self):
-        """Every installed voice as a dict for the voice finder."""
-        from voice_finder import KOKORO_LANG
-        out = []
-        def installed(k):
-            try: return bool(TTS_ENGINES[k].is_installed())
-            except Exception: return False
-        if installed("vctk"):
-            for name, (sid, g) in SPEAKER_MAP.items():
-                out.append(dict(key=f"vctk:{sid}", engine="vctk", voice=sid,
-                                label=disp(name, sid), gender=g, lang="en"))
-        if installed("kokoro"):
-            from engines.kokoro import describe_voice
-            try: ids = TTS_ENGINES["kokoro"].list_voices()
-            except Exception: ids = []
-            for vid in ids:
-                out.append(dict(key=f"kokoro:{vid}", engine="kokoro", voice=vid,
-                                label=f"{vid}  -  {describe_voice(vid)}",
-                                gender={"f": "F", "m": "M"}.get(vid[1:2]),
-                                lang=KOKORO_LANG.get(vid[:1], "en")))
-        if installed("xtts"):
-            for name in TTS_ENGINES["xtts"].list_voices():
-                out.append(dict(key=f"xtts:{name}", engine="xtts", voice=name,
-                                label=name, gender=None, lang="*"))
-        return out
+        return _voice_catalog()
 
     def _vf_apply(self, engine, voice):
         """Select a voice found by the voice finder in the TTS tab."""
@@ -4637,9 +4605,36 @@ AIApp._ensure_engine_tos      = _ensure_engine_tos
 # ──────────────────────────────────────────────────────────────
 #  LOCAL API SERVER (api_server.py) - lets other programs use our models
 # ──────────────────────────────────────────────────────────────
+def _voice_catalog():
+    """Every installed voice as a dict for the voice finder."""
+    from voice_finder import KOKORO_LANG
+    out = []
+    def installed(k):
+        try: return bool(TTS_ENGINES[k].is_installed())
+        except Exception: return False
+    if installed("vctk"):
+        for name, (sid, g) in SPEAKER_MAP.items():
+            out.append(dict(key=f"vctk:{sid}", engine="vctk", voice=sid,
+                            label=disp(name, sid), gender=g, lang="en"))
+    if installed("kokoro"):
+        from engines.kokoro import describe_voice
+        try: ids = TTS_ENGINES["kokoro"].list_voices()
+        except Exception: ids = []
+        for vid in ids:
+            out.append(dict(key=f"kokoro:{vid}", engine="kokoro", voice=vid,
+                            label=f"{vid}  -  {describe_voice(vid)}",
+                            gender={"f": "F", "m": "M"}.get(vid[1:2]),
+                            lang=KOKORO_LANG.get(vid[:1], "en")))
+    if installed("xtts"):
+        for name in TTS_ENGINES["xtts"].list_voices():
+            out.append(dict(key=f"xtts:{name}", engine="xtts", voice=name,
+                            label=name, gender=None, lang="*"))
+    return out
+
+
 class _ApiBackend:
     """Runs API requests on server threads (never touches Tk)."""
-    def __init__(self, app):
+    def __init__(self, app=None):         # app is None in headless mode (no window)
         self.app = app
 
     def _installed(self, key):
@@ -4658,7 +4653,7 @@ class _ApiBackend:
         return {"tts": tts, "stt": stt}
 
     def voices(self):
-        return self.app._vf_catalog()
+        return _voice_catalog()
 
     def tts(self, text, model, voice, language, speed, pitch, volume, depth):
         import api_server
@@ -4834,16 +4829,17 @@ def _build_api_frame(self):
     self._btn(r3, "Open log", self._open_log, color=SURFACE, padx=8).pack(side="left", padx=4)
     self._btn(r3, "Copy MCP command", self._mcp_command_copy, color=SURFACE,
               padx=8).pack(side="left", padx=2)
-    self._label(f, "Background mode starts the app hidden and turns the Local API on. Open the "
-                   "app again to show its window; closing it then asks whether to keep running. "
+    self._label(f, "Background mode runs the engine and Local API with no window at all. Open "
+                   "the app any time: this window attaches to the running engine, and closing "
+                   "it leaves the engine running (use 'Stop background engine' to end it). "
                    "It starts at login, not before you sign in.",
                 fg=FG_DIM, font=("Segoe UI", 8), wraplength=640, justify="left").pack(
                     anchor="w", padx=2)
-    self._api_status = tk.Label(f, text="Stopped", bg=CARD, fg=FG_DIM,
-                                font=("Segoe UI", 8), anchor="w", justify="left")
-    self._api_status.pack(fill="x", padx=2, pady=(2, 0))
     self._api = None
-    if self.api_auto_var.get():
+    ext = autostart.headless_probe()
+    if ext:                       # a background engine (no window) is already serving the API
+        self._attach_engine(ext)
+    elif self.api_auto_var.get():
         self.root.after(1500, self._api_toggle)
 
 
@@ -4852,6 +4848,20 @@ def _api_toggle(self, quiet=False):
     dialog on) logs problems instead of popping up message boxes."""
     if self._api is not None and self._api.running:
         self._api_stop()
+        return
+    ext = autostart.headless_probe()
+    if ext:                       # the API belongs to the background engine: control that one
+        if quiet or not messagebox.askyesno(
+                "Background engine",
+                "The Local API is running in the background engine (no window).\n\n"
+                "Stop that engine? Nothing else here is affected."):
+            self._attach_engine(ext)
+            return
+        autostart.headless_stop()
+        print("[AVS] background engine stopped from the window", flush=True)
+        time.sleep(0.8)           # let it release the port
+        self._api_btn.config(text="Start API server")
+        self._api_status.config(text="Background engine stopped.", fg=FG_DIM)
         return
     import api_server
 
@@ -4918,6 +4928,18 @@ def _api_genkey(self):
     self.api_token_var.set("avs-" + secrets.token_urlsafe(24))
     note = " Restart the API server to apply it." if self._api is not None and self._api.running else ""
     self._api_status.config(text="New key generated (use Copy key)." + note, fg=YELLOW)
+
+
+def _attach_engine(self, ext):
+    """Show that the Local API is served by the headless engine, not by this window."""
+    base = f"http://127.0.0.1:{ext['api']}/v1"
+    self._api_btn.config(text="Stop background engine")
+    self._api_status.config(
+        text=(f"Running in the background engine (no window, pid {ext['pid']}) - this window is "
+              f"attached to it.\nBase URL: {base}\nClosing this window does not stop the engine."),
+        fg=GREEN)
+    print(f"[AVS] attached to the background engine (pid {ext['pid']}, API port {ext['api']})",
+          flush=True)
 
 
 def _api_ensure(self, quiet=True):
@@ -4998,20 +5020,12 @@ def _show_window(self):
     print("[AVS] window shown", flush=True)
 
 
-def _start_background(self):
-    """--background: no window; run the Local API."""
-    self._bg_instance = True
-    self.root.withdraw()
-    print("[AVS] background mode: window hidden, starting the Local API", flush=True)
-    self.root.after(2500, lambda: self._api_ensure(quiet=True))
-
-
 AIApp._mcp_command_copy = _mcp_command_copy
 AIApp._login_mode_apply = _login_mode_apply
 AIApp._open_log = _open_log
 AIApp._show_window = _show_window
-AIApp._start_background = _start_background
 AIApp._api_ensure = _api_ensure
+AIApp._attach_engine = _attach_engine
 AIApp._build_api_frame = _build_api_frame
 AIApp._api_toggle = _api_toggle
 AIApp._api_stop = _api_stop
@@ -5023,7 +5037,16 @@ AIApp._api_genkey = _api_genkey
 
 if __name__ == "__main__":
     APP_LOG_PATH = applog.setup(os.path.join(os.path.dirname(_settings_path()), "app.log"))
-    _bg = autostart.BACKGROUND_FLAG in sys.argv[1:]
+    _argv = sys.argv[1:]
+    if autostart.BACKGROUND_FLAG in _argv or any(f in _argv for f in autostart.LEGACY_FLAGS):
+        # Headless engine: the Local API with no window (see headless.py)
+        import headless
+        _pr = _prefs_load()
+        try:
+            _port = int(_pr.get("api_port", 8765))
+        except (TypeError, ValueError):
+            _port = 8765
+        sys.exit(headless.run(_ApiBackend(None), _port, str(_pr.get("api_token", ""))))
     _hold = {}
     _state, _inst = autostart.claim_instance(
         lambda: _hold.get("app") and _hold["root"].after(0, _hold["app"]._show_window))
@@ -5033,6 +5056,4 @@ if __name__ == "__main__":
     root = tk.Tk()
     app  = AIApp(root)
     _hold.update(root=root, app=app)
-    if _bg:
-        app._start_background()
     root.mainloop()

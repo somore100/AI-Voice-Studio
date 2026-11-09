@@ -4,7 +4,7 @@ Lets Claude Code, Claude Desktop and other MCP clients use this app's voices and
 speech recognition: "say that out loud with AI Voice Studio", "transcribe this
 recording". It is a thin bridge to the app's Local API, so the app has to be
 running with the API on. If it is not, this server starts it in the background
-(`main.py --background`) when it can.
+(`main.py --headless`: engine and API, no window) when it can.
 
 Run (the client launches it for you):
 
@@ -102,11 +102,11 @@ def ensure_running():
     except ConnectionError:
         pass
     if getattr(sys, "frozen", False):       # packaged app (AppImage: $APPIMAGE is the real file)
-        cmd = [os.environ.get("APPIMAGE") or sys.executable, "--background"]
+        cmd = [os.environ.get("APPIMAGE") or sys.executable, "--headless"]
         workdir = os.path.dirname(os.path.abspath(cmd[0]))
     else:
         main_py = os.path.join(HERE, "main.py")
-        cmd, workdir = ([sys.executable, main_py, "--background"], HERE) \
+        cmd, workdir = ([sys.executable, main_py, "--headless"], HERE) \
             if os.path.exists(main_py) else (None, HERE)
     if os.environ.get("AVS_MCP_NO_LAUNCH") or cmd is None:
         raise ToolError("AI Voice Studio is not running. Open it and press 'Start API server' "

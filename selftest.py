@@ -66,16 +66,63 @@ def rms(samples):
     return math.sqrt(sum(x * x for x in samples) / max(1, len(samples)))
 
 
-def centroid(info):
-    """Spectral centroid in Hz (needs numpy), or None."""
+def _frames(info):
+    """(float samples, rate) or None when numpy is missing."""
     try:
         import numpy as np
     except ImportError:
         return None
-    y = np.asarray(info["samples"], dtype=np.float32)[::info["ch"]]
-    spec = np.abs(np.fft.rfft(y * np.hanning(len(y))))
-    freqs = np.fft.rfftfreq(len(y), 1.0 / info["sr"])
-    return float((freqs * spec).sum() / max(spec.sum(), 1e-9))
+    y = np.asarray(info["samples"], dtype=np.float32)[::info["ch"]] / 32768.0
+    return y, info["sr"]
+
+
+def f0_median(info):
+    """Median fundamental frequency (Hz) of the voiced frames (autocorrelation),
+    or None if numpy is missing / the audio has too few voiced frames."""
+    fr = _frames(info)
+    if fr is None:
+        return None
+    import numpy as np
+    y, sr = fr
+    fl, hop = int(0.04 * sr), int(0.02 * sr)
+    lo, hi = int(sr / 500), int(sr / 60)
+    f0s = []
+    for i in range(0, len(y) - fl, hop):
+        x = y[i:i + fl] - y[i:i + fl].mean()
+        if math.sqrt(float((x * x).mean())) < 0.02:
+            continue
+        ac = np.correlate(x, x, "full")[fl - 1:]
+        if ac[0] <= 0:
+            continue
+        ac = ac / ac[0]
+        k = lo + int(np.argmax(ac[lo:hi]))
+        if ac[k] > 0.5:
+            f0s.append(sr / k)
+    return float(np.median(f0s)) if len(f0s) >= 10 else None
+
+
+def voiced_brightness(info, fmax=4000):
+    """Spectral centroid (Hz, 100 Hz..fmax) over the louder half of the frames.
+    Fricative hiss would swamp a whole-clip centroid; this follows the formants."""
+    fr = _frames(info)
+    if fr is None:
+        return None
+    import numpy as np
+    y, sr = fr
+    fl, hop = int(0.04 * sr), int(0.02 * sr)
+    idx = list(range(0, len(y) - fl, hop))
+    en = [math.sqrt(float((y[i:i + fl] ** 2).mean())) for i in idx]
+    thr = float(np.percentile(en, 50))
+    fq = np.fft.rfftfreq(fl, 1.0 / sr)
+    band = (fq > 100) & (fq < fmax)
+    num = den = 0.0
+    for i, e in zip(idx, en):
+        if e < thr:
+            continue
+        sp = np.abs(np.fft.rfft(y[i:i + fl] * np.hanning(fl)))
+        num += float((fq[band] * sp[band]).sum())
+        den += float(sp[band].sum())
+    return num / den if den else None
 
 
 def words(s):
@@ -143,7 +190,8 @@ def run(with_mcp=True):
         ctx["base"] = wav_info(speak())
         d = ctx["base"]["dur"]
         assert d > 0.5, f"audio only {d:.2f}s long"
-        ctx["base_rms"], ctx["base_c"] = rms(ctx["base"]["samples"]), centroid(ctx["base"])
+        ctx["base_rms"] = rms(ctx["base"]["samples"])
+        ctx["base_f0"], ctx["base_b"] = f0_median(ctx["base"]), voiced_brightness(ctx["base"])
         assert ctx["base_rms"] > 50, "audio is silent"
         return f"{d:.1f}s, {ctx['base']['sr']} Hz"
     rep.check("speech: baseline", baseline)
@@ -167,22 +215,31 @@ def run(with_mcp=True):
     def pitch():
         up, dn = wav_info(speak(pitch=6)), wav_info(speak(pitch=-6))
         assert abs(up["dur"] / base["dur"] - 1) < 0.2, "pitch changed the length"
-        cu, cd = centroid(up), centroid(dn)
-        if cu is None:
+        f0 = ctx["base_f0"]
+        if f0 is None:
             assert up["samples"] != base["samples"], "pitch +6 changed nothing"
-            return "changed the audio (install numpy for a direction check)"
-        assert cu > ctx["base_c"] > cd, f"brightness {cd:.0f} / {ctx['base_c']:.0f} / {cu:.0f} Hz not ordered"
-        return f"brightness -6: {cd:.0f} Hz < 0: {ctx['base_c']:.0f} Hz < +6: {cu:.0f} Hz"
+            return "changed the audio (numpy / voiced speech needed for a pitch measurement)"
+        fu, fd = f0_median(up), f0_median(dn)
+        assert fu and fd, "could not measure the pitch of the shifted audio"
+        assert 1.25 < fu / f0 < 1.6, f"pitch +6 gave {fu / f0:.2f}x the pitch (expected about 1.41x)"
+        assert 0.6 < fd / f0 < 0.8, f"pitch -6 gave {fd / f0:.2f}x the pitch (expected about 0.71x)"
+        return f"-6: {fd:.0f} Hz, normal: {f0:.0f} Hz, +6: {fu:.0f} Hz"
     rep.check("effect: pitch moves the voice", pitch)
 
     def depth():
         deep, thin = wav_info(speak(depth=4)), wav_info(speak(depth=-4))
-        cdp, cth = centroid(deep), centroid(thin)
-        if cdp is None:
+        b0 = ctx["base_b"]
+        if b0 is None:
             assert deep["samples"] != base["samples"], "depth +4 changed nothing"
-            return "changed the audio (install numpy for a direction check)"
-        assert cdp < ctx["base_c"] < cth, f"brightness {cdp:.0f} / {ctx['base_c']:.0f} / {cth:.0f} Hz not ordered"
-        return f"deeper: {cdp:.0f} Hz < normal: {ctx['base_c']:.0f} Hz < thinner: {cth:.0f} Hz"
+            return "changed the audio (numpy needed for a direction check)"
+        bd, bt = voiced_brightness(deep), voiced_brightness(thin)
+        assert bd < b0 < bt, f"formants {bd:.0f} / {b0:.0f} / {bt:.0f} Hz are not ordered deeper < normal < thinner"
+        note = f"deeper: {bd:.0f} Hz < normal: {b0:.0f} Hz < thinner: {bt:.0f} Hz"
+        f0, fd = ctx["base_f0"], f0_median(deep)
+        if f0 and fd:
+            assert abs(fd / f0 - 1) < 0.15, f"depth moved the pitch ({fd / f0:.2f}x); it should only change the timbre"
+            note += f"; pitch unchanged ({fd:.0f} vs {f0:.0f} Hz)"
+        return note
     rep.check("effect: depth makes the voice deeper / thinner", depth)
 
     def bad_input():
