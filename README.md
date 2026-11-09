@@ -140,14 +140,23 @@ Optional environment variables: `AVS_API_URL`, `AVS_API_KEY`, `AVS_OUTPUT_DIR`, 
 
 ## ✅ Self-test
 
-Check that the Local API and the MCP server really work on your machine:
+Check that the Local API, the background engine and the MCP server really work on your machine. In the app: **Local API → Run self-test** (live PASS / FAIL lines, *Copy results*, *Open log*). From a terminal:
 
 ```bash
-python selftest.py            # from source
-AI_Voice_Studio --selftest    # packaged build
+python selftest.py                 # from source
+./AI_Voice_Studio.AppImage --selftest      # packaged build (Windows: AI_Voice_Studio.exe --selftest)
 ```
 
-It starts the app in the background if needed, then prints PASS / FAIL per step and exits with 1 if anything failed: API reachable, key enforced, voices, speech, **speed / volume / pitch / depth actually change the audio** (length, loudness, brightness), a speech-to-text round trip, word timestamps, and the MCP handshake. Add `--no-mcp` to skip the last step. It needs the speech and recognition models installed.
+It starts a temporary background engine if none is running (and stops it again; it never stops one that was already running), then checks: API reachable, key enforced, voices, speech, **speed / volume / pitch / depth actually change the audio** (length, loudness, pitch, voice depth), a speech-to-text round trip, word timestamps, the MCP handshake, and that the background engine runs without a window, refuses a twin, and stops cleanly. Exit code 1 if anything failed; everything is also written to `app.log`. `--no-mcp` skips the MCP step. It needs the speech and recognition models installed.
+
+**Testing a downloaded build** (e.g. the CI artifact on Linux), no Python needed:
+
+```bash
+chmod +x AI_Voice_Studio*.AppImage
+./AI_Voice_Studio*.AppImage --selftest      # packaged app, headless engine and MCP in one go
+```
+
+On Windows run the same `--selftest` flag from a terminal; on macOS use `"/Applications/AI Voice Studio.app/Contents/MacOS/AI_Voice_Studio" --selftest`. The log is `app.log` in the settings folder (Linux `~/.config/AI Voice Studio/`, macOS `~/Library/Application Support/AI Voice Studio/`, Windows `%APPDATA%\AI Voice Studio\`).
 
 ## 🗂️ Project layout
 

@@ -24,6 +24,8 @@ import urllib.request
 import uuid
 import wave
 
+import applog
+import autostart
 import mcp_server as M
 
 TEXT = "Hello there, this is a self test of the voice studio."
@@ -131,8 +133,8 @@ def words(s):
 
 # ── the checks ────────────────────────────────────────────────────────────
 class Report:
-    def __init__(self):
-        self.rows = []
+    def __init__(self, out=print):
+        self.rows, self.out = [], out
 
     def check(self, name, fn):
         t = time.time()
@@ -145,20 +147,30 @@ class Report:
         except Exception as e:
             status, note = "FAIL", f"{type(e).__name__}: {e}"
         self.rows.append((name, status, note))
-        print(f"  [{status}] {name}" + (f"  - {note}" if note else "") +
-              f"   ({time.time() - t:.1f}s)", flush=True)
+        self.out(f"  [{status}] {name}" + (f"  - {note}" if note else "") +
+                 f"   ({time.time() - t:.1f}s)")
 
     @property
     def failed(self):
         return sum(1 for r in self.rows if r[1] == "FAIL")
 
 
-def run(with_mcp=True):
-    rep, ctx = Report(), {}
-    print(f"AI Voice Studio self-test  ->  {M.api_base()}", flush=True)
+def run(with_mcp=True, out=print):
+    """Runs every check, reporting each line through `out`. Returns 0 (all passed) or 1."""
+    rep, ctx = Report(out), {}
+    out(f"AI Voice Studio self-test  ->  {M.api_base()}")
+
+    def api_up():
+        try:
+            return http("GET", "/models", timeout=5)[0] in (200, 401)
+        except Exception:
+            return False
+    ctx["was_up"] = api_up()
 
     def reachable():
         M.ensure_running()
+        # we started a headless engine ourselves -> we may stop it again at the end
+        ctx["started"] = (not ctx["was_up"]) and autostart.headless_probe() is not None
         st, data = http("GET", "/models")
         assert st == 200, f"HTTP {st}"
         models = json.loads(data)["data"]
@@ -168,7 +180,7 @@ def run(with_mcp=True):
         return f"speech: {', '.join(ctx['tts'])}; recognition: {', '.join(ctx['stt']) or 'none'}"
     rep.check("API reachable, models listed", reachable)
     if ctx.get("tts") is None:
-        print("Cannot continue: the API is not reachable.")
+        out("Cannot continue: the API is not reachable.")
         return 1
 
     def auth():
@@ -308,15 +320,38 @@ def run(with_mcp=True):
                 p.kill()
         rep.check("MCP server: handshake and tools", mcp)
 
+    def engine_lifecycle():
+        if not ctx.get("started"):
+            return ("skip", "the engine was already running before the test; not touching it")
+        info = autostart.headless_probe()
+        assert info, "the background engine does not answer on its control port"
+        note = f"engine pid {info['pid']} serving port {info['api']} with no window"
+        cmd = M.app_command("--headless")
+        if cmd:                                   # a second engine must refuse to start
+            r = subprocess.run(cmd, cwd=M.HERE, stdin=subprocess.DEVNULL, capture_output=True,
+                               text=True, timeout=180)
+            assert r.returncode == 1, f"a second engine exited with {r.returncode}, expected 1"
+            note += "; a second engine was refused"
+        assert autostart.headless_stop(), "the engine did not acknowledge 'stop'"
+        for _ in range(40):
+            if autostart.headless_probe() is None and not api_up():
+                return note + "; stopped cleanly"
+            time.sleep(0.5)
+        raise AssertionError("the engine did not shut down after 'stop'")
+    rep.check("background engine: runs without a window, refuses a twin, stops", engine_lifecycle)
+    if ctx.get("started") and autostart.headless_probe():     # never leave our own engine behind
+        autostart.headless_stop()
+
     n, bad = len(rep.rows), rep.failed
     skipped = sum(1 for r in rep.rows if r[1] == "SKIP")
-    print(f"\n{n - bad - skipped} passed, {bad} failed, {skipped} skipped", flush=True)
+    out(f"\n{n - bad - skipped} passed, {bad} failed, {skipped} skipped")
     return 1 if bad else 0
 
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
-    return run(with_mcp="--no-mcp" not in argv)
+    applog.setup(os.path.join(M.settings_dir(), "app.log"))      # so a packaged run leaves a record
+    return run(with_mcp="--no-mcp" not in argv, out=lambda m: print(m, flush=True))
 
 
 if __name__ == "__main__":

@@ -4826,8 +4826,12 @@ def _build_api_frame(self):
                       values=list(self._login_modes))
     cb.pack(side="left", padx=6)
     cb.bind("<<ComboboxSelected>>", lambda e: self._login_mode_apply())
-    self._btn(r3, "Open log", self._open_log, color=SURFACE, padx=8).pack(side="left", padx=4)
-    self._btn(r3, "Copy MCP command", self._mcp_command_copy, color=SURFACE,
+    r4 = tk.Frame(f, bg=CARD); r4.pack(fill="x", padx=2, pady=3)
+    self._btn(r4, "Run self-test", self._selftest_open, color=BLUE, padx=8).pack(side="left")
+    self._btn(r4, "Start background engine", self._headless_start, color=SURFACE,
+              padx=8).pack(side="left", padx=4)
+    self._btn(r4, "Open log", self._open_log, color=SURFACE, padx=8).pack(side="left", padx=2)
+    self._btn(r4, "Copy MCP command", self._mcp_command_copy, color=SURFACE,
               padx=8).pack(side="left", padx=2)
     self._label(f, "Background mode runs the engine and Local API with no window at all. Open "
                    "the app any time: this window attaches to the running engine, and closing "
@@ -4961,6 +4965,112 @@ def _api_stop(self):
         pass
 
 
+def _selftest_open(self):
+    """Run the end-to-end self-test (API effects, speech <-> text, MCP, background engine)
+    in a window with live PASS / FAIL lines. The lines also go to app.log."""
+    if getattr(self, "_st_win", None) is not None and self._st_win.winfo_exists():
+        self._st_win.lift()
+        return
+    import selftest
+    top = tk.Toplevel(self.root)
+    top.title("Self-test")
+    top.configure(bg=BG)
+    top.geometry("860x440")
+    self._st_win = top
+    txt = tk.Text(top, bg=SURFACE, fg=FG, font=("TkFixedFont", 9), relief="flat", wrap="word")
+    txt.pack(fill="both", expand=True, padx=10, pady=(10, 4))
+    for tag, col in (("PASS", GREEN), ("FAIL", RED), ("SKIP", YELLOW)):
+        txt.tag_config(tag, foreground=col)
+    state = tk.Label(top, text="", bg=BG, fg=FG_DIM, font=("Segoe UI", 9), anchor="w")
+    state.pack(fill="x", padx=10)
+    bar = tk.Frame(top, bg=BG); bar.pack(fill="x", padx=10, pady=8)
+
+    def out(line):
+        print(line, flush=True)
+
+        def add():
+            if txt.winfo_exists():
+                tag = next((t for t in ("PASS", "FAIL", "SKIP") if f"[{t}]" in line), "")
+                txt.insert("end", line + "\n", tag)
+                txt.see("end")
+        self.root.after(0, add)
+
+    def finished(rc):
+        if not top.winfo_exists():
+            return
+        again.config(state="normal")
+        state.config(text="All checks passed." if rc == 0 else
+                     "Some checks failed - see the lines above. 'Copy results' puts them on the clipboard.",
+                     fg=GREEN if rc == 0 else RED)
+
+    def start():
+        txt.delete("1.0", "end")
+        again.config(state="disabled")
+        state.config(text="Running... (the first run loads the models; this can take a minute or two)",
+                     fg=FG_DIM)
+        out("Uses the Local API. If it is off, a temporary background engine is started and stopped again.")
+
+        def work():
+            try:
+                rc = selftest.run(out=out)
+            except Exception as e:
+                out(f"  [FAIL] the self-test crashed: {e!r}")
+                rc = 1
+            self.root.after(0, lambda: finished(rc))
+        threading.Thread(target=work, daemon=True).start()
+
+    def copy():
+        self.root.clipboard_clear(); self.root.clipboard_append(txt.get("1.0", "end").strip())
+        state.config(text="Results copied.", fg=GREEN)
+
+    again = self._btn(bar, "Run again", start, color=BLUE, padx=10)
+    again.pack(side="left")
+    self._btn(bar, "Copy results", copy, color=SURFACE, padx=10).pack(side="left", padx=6)
+    self._btn(bar, "Open log", self._open_log, color=SURFACE, padx=10).pack(side="left")
+    self._btn(bar, "Close", top.destroy, color=SURFACE, padx=10).pack(side="right")
+    start()
+
+
+def _headless_start(self):
+    """Start the engine in a separate process with no window, then attach to it."""
+    ext = autostart.headless_probe()
+    if ext:
+        self._attach_engine(ext)
+        return
+    if self._api is not None and self._api.running:
+        if not messagebox.askyesno(
+                "Background engine",
+                "This window is serving the Local API right now.\n\nMove it to a background "
+                "engine (no window)? The API restarts in a moment."):
+            return
+        self._api_stop()
+    cmd = autostart.launch_command(True, script=os.path.abspath(__file__))
+    workdir = (os.path.dirname(os.path.abspath(cmd[0])) if getattr(sys, "frozen", False)
+               else os.path.dirname(os.path.abspath(__file__)))
+    kw = {"creationflags": 0x00000008 | 0x00000200} if os.name == "nt" else {"start_new_session": True}
+    try:
+        subprocess.Popen(cmd, cwd=workdir, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, **kw)
+    except OSError as e:
+        print(f"[AVS] could not start the background engine: {e!r}", flush=True)
+        self._api_status.config(text=f"Could not start the background engine: {e}", fg=RED)
+        return
+    print(f"[AVS] background engine launched: {' '.join(cmd)}", flush=True)
+    self._api_status.config(
+        text="Starting the background engine (loading the models can take a moment)...", fg=YELLOW)
+
+    def poll(n=0):
+        e = autostart.headless_probe()
+        if e:
+            self._attach_engine(e)
+        elif n >= 90:
+            self._api_status.config(text="The background engine did not come up. Open the log "
+                                         "(button below) to see why.", fg=RED)
+        else:
+            self.root.after(1000, lambda: poll(n + 1))
+    self.root.after(1500, poll)
+
+
 def _mcp_command_copy(self):
     """Put the 'claude mcp add' command for THIS install on the clipboard."""
     import shlex
@@ -5021,6 +5131,8 @@ def _show_window(self):
 
 
 AIApp._mcp_command_copy = _mcp_command_copy
+AIApp._selftest_open = _selftest_open
+AIApp._headless_start = _headless_start
 AIApp._login_mode_apply = _login_mode_apply
 AIApp._open_log = _open_log
 AIApp._show_window = _show_window
