@@ -9,6 +9,12 @@ if "--mcp" in sys.argv[1:]:
     mcp_server.main()
     sys.exit(0)
 
+# Self-test mode: `AI_Voice_Studio --selftest` checks the Local API and MCP server end to
+# end and exits with 0 (all passed) or 1. Like --mcp it runs before anything heavy loads.
+if "--selftest" in sys.argv[1:]:
+    import selftest
+    sys.exit(selftest.main())
+
 # ── AppImage: find the host's ALSA plugins (pipewire/pulse) ────────────────
 _ALSA_PLUGIN_MISSING = False
 if sys.platform.startswith("linux") and getattr(sys, "frozen", False) \

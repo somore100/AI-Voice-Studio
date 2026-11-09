@@ -107,7 +107,7 @@ curl http://127.0.0.1:8765/v1/audio/transcriptions -F file=@hello.wav -F model=w
   -F response_format=verbose_json -F "timestamp_granularities[]=word"
 ```
 
-Endpoints: `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/audio/translations`, `/v1/models`, `/v1/voices`. Extra speech fields: `language`, `pitch`, `volume`, `depth`. Transcriptions return segment times by default and a `words` list (`word`, `start`, `end`) when you ask for word granularity.
+Endpoints: `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/audio/translations`, `/v1/models`, `/v1/voices`. Extra speech fields: `language`, `speed` (0.25-4), `pitch` (-12 to 12 semitones), `volume` (0-2), `depth` (-8 to 8, positive is deeper). Transcriptions return segment times by default and a `words` list (`word`, `start`, `end`) when you ask for word granularity.
 
 **Start automatically:** in the Local API section, *Start when the app opens* turns the server on at launch, and *When I log in to this computer* can open the app, or run it **in the background** (no window, API only). Launch the app again to bring the hidden window back; closing it then asks whether to keep running. This starts at login, not before you sign in. Everything the app prints is also written, with timestamps, to `app.log` in the settings folder (*Open log* button), which is how you check a background run.
 
@@ -136,6 +136,17 @@ claude mcp add --scope user ai-voice-studio -- "C:\Program Files\AI Voice Studio
 
 Optional environment variables: `AVS_API_URL`, `AVS_API_KEY`, `AVS_OUTPUT_DIR`, `AVS_MCP_NO_LAUNCH=1`.
 
+## ✅ Self-test
+
+Check that the Local API and the MCP server really work on your machine:
+
+```bash
+python selftest.py            # from source
+AI_Voice_Studio --selftest    # packaged build
+```
+
+It starts the app in the background if needed, then prints PASS / FAIL per step and exits with 1 if anything failed: API reachable, key enforced, voices, speech, **speed / volume / pitch / depth actually change the audio** (length, loudness, brightness), a speech-to-text round trip, word timestamps, and the MCP handshake. Add `--no-mcp` to skip the last step. It needs the speech and recognition models installed.
+
 ## 🗂️ Project layout
 
 | File | Purpose |
@@ -159,7 +170,7 @@ Optional environment variables: `AVS_API_URL`, `AVS_API_KEY`, `AVS_OUTPUT_DIR`, 
 
 ## 🧭 What's next
 
-**Shipped recently:** MCP server for Claude and other AI tools, start the Local API at launch / login (also in the background), a log file, faster voice changer (fast-Whisper warm-up, sentence-by-sentence speech, Vosk recognizes while you talk), click / typing / hallucination filtering, extra speed and pitch for selected text, Live Pitch and virtual mic code for Windows and macOS, in-app **Leave Feedback**, word timestamps in the Local API.
+**Shipped recently:** end-to-end self-test (`--selftest`), MCP server for Claude and other AI tools, start the Local API at launch / login (also in the background), a log file, faster voice changer (fast-Whisper warm-up, sentence-by-sentence speech, Vosk recognizes while you talk), click / typing / hallucination filtering, extra speed and pitch for selected text, Live Pitch and virtual mic code for Windows and macOS, in-app **Leave Feedback**, word timestamps in the Local API.
 
 **Next up**
 * Test the Windows and macOS builds on real machines (virtual microphone, Live Pitch)
