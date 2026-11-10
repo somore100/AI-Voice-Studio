@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # AI Voice Studio Local API with curl. The app (or `AI_Voice_Studio --headless`) must be running.
-#   AVS_API_KEY=your-key ./examples/curl.sh
+#   AVS_API_KEY=your-key ./examples/curl.sh      (the key is in the app: Local API -> Copy key)
 API="${AVS_API_URL:-http://127.0.0.1:8765/v1}"
 AUTH=()
 [ -n "$AVS_API_KEY" ] && AUTH=(-H "Authorization: Bearer $AVS_API_KEY")

@@ -27,7 +27,8 @@ def _hide_console():
             pass
 
 
-def run(backend, port, token="", control_port=autostart.HEADLESS_PORT, log=print):
+def run(backend, port, token="", control_port=autostart.HEADLESS_PORT, log=print,
+        allow_no_key=False):
     """Serve until asked to stop. Returns an exit code (0 ok, 1 could not start)."""
     stop, ready = threading.Event(), threading.Event()
     ctl = autostart.headless_serve(
@@ -36,9 +37,13 @@ def run(backend, port, token="", control_port=autostart.HEADLESS_PORT, log=print
         log(f"[AVS] headless: another background engine is already running (control port "
             f"{control_port}); exiting", flush=True)
         return 1
-    api = api_server.ApiServer(backend, port, token, log=log)
     try:
+        api = api_server.ApiServer(backend, port, token, log=log, allow_no_key=allow_no_key)
         api.start()
+    except ValueError as e:                     # no API key and not explicitly allowed
+        log(f"[AVS] headless: {e}", flush=True)
+        ctl.close()
+        return 1
     except OSError as e:
         log(f"[AVS] headless: could not start the Local API on port {port}: {e}. "
             "Is AI Voice Studio already running its API? Stop it first.", flush=True)

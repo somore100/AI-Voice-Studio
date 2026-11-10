@@ -3,7 +3,8 @@
 Text to speech and speech to text from your own programs, using the voices and models already on your computer. OpenAI-compatible, so existing OpenAI client code works by changing the base URL.
 
 * **Base URL:** `http://127.0.0.1:8765/v1` (port is configurable). Listens on this computer only.
-* **Auth:** if you set an API key in the app, send `Authorization: Bearer YOUR_KEY` on every request. Without a key, any program on this computer can use it.
+* **Auth:** an API key is **required**. The app creates one the first time (Local API section: *Copy key*). Send `Authorization: Bearer YOUR_KEY` on every request. Programs running as you (the MCP server, the self-test) read it from the app's settings automatically. Running without a key needs the explicit *Allow without a key* switch and is not recommended.
+* **Web pages cannot use it.** Requests from a browser page on another site (an `Origin` that is not this server, or `Sec-Fetch-Site: cross-site`) are refused with 403, even with the right key.
 * **Start it:** press *Start API server* in the app, or run it with no window: `AI_Voice_Studio --headless` (see [Running without a window](#running-without-a-window)).
 * **One request at a time.** The models are shared, so requests are processed in order. Do not fire many in parallel; queue them in your program.
 
@@ -44,9 +45,16 @@ The response body is the audio file.
 | `response_format` | `json` (default, `{"text": ...}`), `text`, `srt`, `vtt`, `verbose_json`. |
 | `timestamp_granularities[]` | `word` with `verbose_json` adds `"words": [{"word","start","end"}]` (seconds). |
 
+## Limits
+
+* Speech requests must be `Content-Type: application/json`; transcription requests `multipart/form-data` with a `Content-Length` (no chunked bodies).
+* Uploads are recognised by their **content**, not their file name: WAV, FLAC, OGG/Opus, MP3, AAC, M4A/MP4, WebM/MKV, AIFF. Playlists and other text formats are refused (415).
+* Audio: at most 1 hour, 8 channels, 4-192 kHz; request bodies up to 200 MB (speech JSON 1 MB, text 20,000 characters).
+* One job runs at a time and up to 4 wait; more get `429` with `Retry-After`. Too many open connections get `503`.
+
 ## Errors
 
-Every error is JSON: `{"error": {"message": "...", "type": "invalid_request_error"}}` with the HTTP status: `400` bad input, `401` wrong or missing key, `404` unknown endpoint or missing model, `503` engine not installed.
+Every error is JSON: `{"error": {"message": "...", "type": "invalid_request_error"}}` with the HTTP status: `400` bad input, `401` wrong or missing key, `403` browser/cross-site request or foreign host, `404` unknown endpoint or missing model, `408` slow upload, `411` missing `Content-Length`, `413` too large or too long, `415` wrong content type or unsupported audio, `429` busy, `503` engine not installed or server full. Internal errors say "Internal error (see the app log)"; details are in `app.log`.
 
 ## How to structure your integration
 

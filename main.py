@@ -464,7 +464,9 @@ def _prefs_set(key, value):
         path = _prefs_path()
         os.makedirs(os.path.dirname(path), exist_ok=True)
         tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f: json.dump(d, f, indent=1)
+        # prefs.json holds the API key: owner-only from the first byte (no-op on Windows)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f: json.dump(d, f, indent=1)
         os.replace(tmp, path)
     except Exception: pass
 
@@ -1894,7 +1896,7 @@ class AIApp:
         except Exception as e:
             print(f"[AVS] File transcription failed: {e}")
             traceback.print_exc()
-            self.root.after(0, lambda: messagebox.showerror("Transcription Error", str(e)))
+            self.root.after(0, lambda err=str(e): messagebox.showerror("Transcription Error", err))
             self.root.after(0, lambda: self._set_stt_status("Error", RED))
         finally:
             try:
@@ -2045,6 +2047,10 @@ class AIApp:
             fmt = self.captions_format_var.get()
             ext = ".srt" if fmt == "SRT" else ".vtt"
             out_path = os.path.splitext(path)[0] + ext
+            _n = 2
+            while os.path.exists(out_path):          # never replace a subtitle file that is already there
+                out_path = f"{os.path.splitext(path)[0]} ({_n}){ext}"
+                _n += 1
             if fmt == "SRT":
                 subtitles.write_srt(captions, out_path)
             else:
@@ -2630,7 +2636,7 @@ class AIApp:
                 print(f"[AVS] Timeline failed: {e}")
                 traceback.print_exc()
                 self.root.after(0, self._stop_loading)
-                self.root.after(0, lambda: messagebox.showerror("Timeline Error", str(e)))
+                self.root.after(0, lambda err=str(e): messagebox.showerror("Timeline Error", err))
                 self.root.after(0, lambda: self._set_tts_status("Error", RED))
                 self.root.after(0, done)
         threading.Thread(target=work, daemon=True).start()
@@ -2730,7 +2736,7 @@ class AIApp:
                 print("[AVS] Underlying cause:")
                 traceback.print_exception(type(e.__cause__), e.__cause__, e.__cause__.__traceback__)
             self.root.after(0, self._stop_loading)
-            self.root.after(0, lambda: messagebox.showerror("Preview Error", str(e)))
+            self.root.after(0, lambda err=str(e): messagebox.showerror("Preview Error", err))
             self.root.after(0, lambda: self._set_tts_status("Error", RED))
 
     def stop_preview(self):
@@ -2785,7 +2791,7 @@ class AIApp:
                 print("[AVS] Underlying cause:")
                 traceback.print_exception(type(e.__cause__), e.__cause__, e.__cause__.__traceback__)
             self.root.after(0, self._stop_loading)
-            self.root.after(0, lambda: messagebox.showerror("TTS Error", str(e)))
+            self.root.after(0, lambda err=str(e): messagebox.showerror("TTS Error", err))
             self.root.after(0, lambda: self._set_tts_status("Error", RED))
 
     def toggle_top(self): self.root.attributes("-topmost", self.always_on_top.get())
@@ -4688,7 +4694,10 @@ class _ApiBackend:
             if sel is None and key == "kokoro":
                 sel = next((i for i in ids if i.lower().startswith(low)), None)
             if sel is None and key == "xtts" and low.startswith("clone:"):
-                sel = CLONE_PREFIX + v[6:]
+                # A caller-chosen file path would let any API client make the app read
+                # arbitrary local audio files: not offered over the API.
+                raise api_server.ApiError(400, "Cloning from a file path is not available "
+                                               "through the API.")
         if sel is None:
             if key == "kokoro":
                 sel = "af_heart" if "af_heart" in ids else (ids[0] if ids else None)
@@ -4783,13 +4792,16 @@ def _build_api_frame(self):
     self._label(info, "  Other apps can use this app's voices and Whisper instead of "
                       "installing their own (OpenAI-compatible, this computer only).",
                 fg=FG_DIM, font=("Segoe UI", 8)).pack(side="left")
+    import api_server
     pr = _prefs_load()
+    if not str(pr.get("api_token", "")).strip() and not pr.get("api_allow_no_key"):
+        pr["api_token"] = api_server.ensure_token(_prefs_path())   # a key from the start
     r1 = tk.Frame(f, bg=CARD); r1.pack(fill="x", padx=2, pady=3)
     self._label(r1, "Port:").pack(side="left")
     self.api_port_var = tk.StringVar(value=str(pr.get("api_port", 8765)))
     tk.Entry(r1, textvariable=self.api_port_var, width=7, bg=SURFACE, fg=FG,
              insertbackground=FG, relief="flat").pack(side="left", padx=6)
-    self._label(r1, "API key (optional):").pack(side="left", padx=(10, 0))
+    self._label(r1, "API key:").pack(side="left", padx=(10, 0))
     self.api_token_var = tk.StringVar(value=str(pr.get("api_token", "")))
     tk.Entry(r1, textvariable=self.api_token_var, width=22, bg=SURFACE, fg=FG,
              insertbackground=FG, relief="flat", show="*").pack(side="left", padx=6)
@@ -4800,6 +4812,9 @@ def _build_api_frame(self):
     self._api_btn = self._btn(r2, "Start API server", self._api_toggle, color=BLUE)
     self._api_btn.pack(side="left")
     self.api_auto_var = tk.BooleanVar(value=bool(pr.get("api_autostart", False)))
+    self.api_nokey_var = tk.BooleanVar(value=bool(pr.get("api_allow_no_key", False)))
+    self.api_nokey_var.trace_add("write", lambda *_: _prefs_set(
+        "api_allow_no_key", bool(self.api_nokey_var.get())))
     self._api_open_btn = self._btn(r2, "Open in browser", self._api_open, color=SURFACE, padx=8)
     self._api_open_btn.pack(side="left", padx=4)
     self._api_copy_btn = self._btn(r2, "Copy URL", lambda: self._api_copy(self._api_base(), "URL"),
@@ -4807,6 +4822,8 @@ def _build_api_frame(self):
     self._api_copy_btn.pack(side="left", padx=2)
     ttk.Checkbutton(r2, text="Start when the app opens",
                     variable=self.api_auto_var).pack(side="left", padx=12)
+    ttk.Checkbutton(r1, text="Allow without a key (not recommended)",
+                    variable=self.api_nokey_var).pack(side="left", padx=10)
     self.api_token_var.trace_add("write", lambda *_: _prefs_set(
         "api_token", self.api_token_var.get().strip()))
     self.api_port_var.trace_add("write", lambda *_: (
@@ -4886,10 +4903,15 @@ def _api_toggle(self, quiet=False):
         problem("Port must be a number from 1024 to 65535.")
         return
     token = self.api_token_var.get().strip()
+    allow_no_key = bool(self.api_nokey_var.get())
+    if not token and not allow_no_key:      # the API is never started open by accident
+        token = api_server.ensure_token(_prefs_path())
+        self.api_token_var.set(token)
     _prefs_set("api_port", port); _prefs_set("api_token", token)
     _prefs_set("api_autostart", bool(self.api_auto_var.get()))
     try:
-        self._api = api_server.ApiServer(_ApiBackend(self), port, token)
+        self._api = api_server.ApiServer(_ApiBackend(self), port, token,
+                                         allow_no_key=allow_no_key)
         self._api.start()
     except OSError as e:
         self._api = None
@@ -5158,7 +5180,12 @@ if __name__ == "__main__":
             _port = int(_pr.get("api_port", 8765))
         except (TypeError, ValueError):
             _port = 8765
-        sys.exit(headless.run(_ApiBackend(None), _port, str(_pr.get("api_token", ""))))
+        import api_server
+        _allow = bool(_pr.get("api_allow_no_key", False))
+        _tok = str(_pr.get("api_token", "")).strip()
+        if not _tok and not _allow:
+            _tok = api_server.ensure_token(_prefs_path())
+        sys.exit(headless.run(_ApiBackend(None), _port, _tok, allow_no_key=_allow))
     _hold = {}
     _state, _inst = autostart.claim_instance(
         lambda: _hold.get("app") and _hold["root"].after(0, _hold["app"]._show_window))
