@@ -185,7 +185,7 @@ def run(with_mcp=True, out=print):
 
     def auth():
         if not M.api_key():
-            return ("skip", "no API key set")
+            return ("skip", "no API key set (the app creates one by default)")
         st, _ = http("GET", "/models", key="wrong-key")
         assert st == 401, f"a wrong key got HTTP {st}, expected 401"
         return "wrong key rejected"
@@ -253,6 +253,30 @@ def run(with_mcp=True, out=print):
             note += f"; pitch unchanged ({fd:.0f} vs {f0:.0f} Hz)"
         return note
     rep.check("effect: depth makes the voice deeper / thinner", depth)
+
+    def web_pages_blocked():
+        body = json.dumps({"input": "hi", "response_format": "wav"}).encode()
+        j = {"Content-Type": "application/json"}
+        st, _ = http("POST", "/audio/speech", body, dict(j, Origin="https://evil.example"))
+        assert st == 403, f"a request from another website got HTTP {st}, expected 403 (even with the right key)"
+        st, _ = http("POST", "/audio/speech", body, {"Content-Type": "text/plain"})
+        assert st == 415, f"a 'simple' text/plain request got HTTP {st}, expected 415"
+        st, _ = http("POST", "/audio/speech", body, dict(j, **{"Sec-Fetch-Site": "cross-site"}))
+        assert st == 403, f"a cross-site browser request got HTTP {st}, expected 403"
+        return "foreign Origin, cross-site and text/plain requests refused"
+    rep.check("security: web pages cannot use the API", web_pages_blocked)
+
+    def playlist_refused():
+        b = uuid.uuid4().hex
+        pl = b"#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:5,\n/etc/hostname\n#EXT-X-ENDLIST\n"
+        body = (f'--{b}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n'
+                f'--{b}\r\nContent-Disposition: form-data; name="file"; filename="a.m3u8"\r\n'
+                "Content-Type: audio/x-mpegurl\r\n\r\n").encode() + pl + f"\r\n--{b}--\r\n".encode()
+        st, _ = http("POST", "/audio/transcriptions", body,
+                     {"Content-Type": f"multipart/form-data; boundary={b}"})
+        assert st == 415, f"a playlist upload got HTTP {st}, expected 415 (it could read local files)"
+        return "playlist uploads refused"
+    rep.check("security: uploads cannot point ffmpeg at local files", playlist_refused)
 
     def bad_input():
         st, _ = http("POST", "/audio/speech", b'{"input": ""}', {"Content-Type": "application/json"})

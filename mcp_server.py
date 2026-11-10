@@ -112,6 +112,9 @@ def _request(method, path, body=None, headers=None, timeout=300):
         raise ConnectionError(str(e))
 
 
+_SPAWNED = []          # engines this process started (kept so finished ones are reaped)
+
+
 def ensure_running():
     """Make sure the API answers; start the app in the background if needed."""
     try:
@@ -126,8 +129,10 @@ def ensure_running():
     workdir = HERE if os.environ.get("AVS_APP_CMD") or not getattr(sys, "frozen", False) \
         else os.path.dirname(os.path.abspath(cmd[0]))
     log("API not reachable - starting AI Voice Studio in the background")
-    subprocess.Popen(cmd, cwd=workdir, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                     stderr=subprocess.DEVNULL, start_new_session=(os.name != "nt"))
+    _SPAWNED.append(subprocess.Popen(cmd, cwd=workdir, stdin=subprocess.DEVNULL,
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                     start_new_session=(os.name != "nt")))
+    _SPAWNED[:] = [p for p in _SPAWNED if p.poll() is None]      # reap finished ones
     deadline = time.time() + 90                   # the models take a while to load
     while time.time() < deadline:
         time.sleep(1.5)
@@ -224,6 +229,7 @@ def _multipart(fields, fname, data):
     out = []
     for k, v in fields:
         out.append(f'--{b}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode())
+    fname = "".join(c for c in fname if c not in '"\r\n\\')        # keep the header well-formed
     out.append((f'--{b}\r\nContent-Disposition: form-data; name="file"; filename="{fname}"\r\n'
                 "Content-Type: application/octet-stream\r\n\r\n").encode() + data + b"\r\n")
     out.append(f"--{b}--\r\n".encode())
@@ -340,6 +346,8 @@ def main():
         except ValueError:
             continue
         for m in (msg if isinstance(msg, list) else [msg]):
+            if not isinstance(m, dict):          # e.g. a bare number or string: ignore, don't crash
+                continue
             resp = handle(m)
             if resp is not None:
                 sys.stdout.write(json.dumps(resp) + "\n")

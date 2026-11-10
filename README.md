@@ -96,14 +96,15 @@ Where things live: models are stored in `./models/` when you run from source (pa
 
 ## 🔌 Local API
 
-Other programs can use this app's voices and Whisper instead of installing their own models. Turn it on in the **Local API** section (it listens on `127.0.0.1` only, optional token). It speaks the OpenAI format, so any app with a "custom / local OpenAI provider" setting works: base URL `http://127.0.0.1:8765/v1`.
+Other programs can use this app's voices and Whisper instead of installing their own models. Turn it on in the **Local API** section (it listens on `127.0.0.1` only and needs an API key, which the app creates for you; websites cannot use it). It speaks the OpenAI format, so any app with a "custom / local OpenAI provider" setting works: base URL `http://127.0.0.1:8765/v1`.
 
 ```bash
-curl http://127.0.0.1:8765/v1/audio/speech -H "Content-Type: application/json" \
+KEY="paste the key from the app (Local API -> Copy key)"
+curl http://127.0.0.1:8765/v1/audio/speech -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
   -d '{"model":"kokoro","voice":"af_heart","input":"Hello there"}' -o hello.wav
-curl http://127.0.0.1:8765/v1/audio/transcriptions -F file=@hello.wav -F model=whisper-1
+curl http://127.0.0.1:8765/v1/audio/transcriptions -H "Authorization: Bearer $KEY" -F file=@hello.wav -F model=whisper-1
 # word-level times (for karaoke captions / sync): verbose_json + word granularity
-curl http://127.0.0.1:8765/v1/audio/transcriptions -F file=@hello.wav -F model=whisper-1 \
+curl http://127.0.0.1:8765/v1/audio/transcriptions -H "Authorization: Bearer $KEY" -F file=@hello.wav -F model=whisper-1 \
   -F response_format=verbose_json -F "timestamp_granularities[]=word"
 ```
 
