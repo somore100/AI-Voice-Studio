@@ -103,7 +103,7 @@ def build(models_base):
                 continue
             tmp = dest + ".part"
             req = urllib.request.Request(BASE_URL + name,
-                                         headers={"User-Agent": "AI-Voice-Studio"})
+                                         headers={"User-Agent": "Audiovane"})
             with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as f:
                 expected = int(r.headers.get("Content-Length") or 0)
                 got = 0

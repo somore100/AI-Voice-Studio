@@ -1,7 +1,7 @@
 import os
 import sys
 
-# MCP mode: `AI_Voice_Studio --mcp` is an MCP server on stdin/stdout. It must run
+# MCP mode: `Audiovane --mcp` is an MCP server on stdin/stdout. It must run
 # before anything else loads (the libraries below print banners that would corrupt
 # the protocol, and the AI models take seconds to import).
 if "--mcp" in sys.argv[1:]:
@@ -9,7 +9,7 @@ if "--mcp" in sys.argv[1:]:
     mcp_server.main()
     sys.exit(0)
 
-# Self-test mode: `AI_Voice_Studio --selftest` checks the Local API and MCP server end to
+# Self-test mode: `Audiovane --selftest` checks the Local API and MCP server end to
 # end and exits with 0 (all passed) or 1. Like --mcp it runs before anything heavy loads.
 if "--selftest" in sys.argv[1:]:
     import selftest
@@ -125,26 +125,31 @@ SAVED_FAVORITES = ['Adam', 'Emma', 'Ivy']  # default; overridden by prefs.json
 # ──────────────────────────────────────────────────────────────
 #  MODEL PATHS
 # ──────────────────────────────────────────────────────────────
+import legacy
+
 if getattr(sys, 'frozen', False):
     _BASE = os.path.dirname(sys.executable)
 else:
     _BASE = os.path.dirname(os.path.realpath(__file__))
 
 def _user_data_dir():
+    return legacy.migrate_dir(_user_data_dir_raw())
+
+def _user_data_dir_raw():
     """Cross-platform writable location for models/config when running frozen.
-    Windows: %APPDATA%\\AI Voice Studio
-    macOS:   ~/Library/Application Support/AI Voice Studio
-    Linux:   $XDG_DATA_HOME/AI Voice Studio  (falls back to ~/.local/share)
+    Windows: %APPDATA%\\Audiovane
+    macOS:   ~/Library/Application Support/Audiovane
+    Linux:   $XDG_DATA_HOME/Audiovane  (falls back to ~/.local/share)
     This matters because a frozen build's own folder can be read-only
     (Program Files without admin, a mounted AppImage, a signed .app bundle)."""
     if sys.platform == "win32":
         base = os.environ.get('APPDATA') or os.path.expanduser('~')
-        return os.path.join(base, 'AI Voice Studio')
+        return os.path.join(base, 'Audiovane')
     elif sys.platform == "darwin":
-        return os.path.expanduser('~/Library/Application Support/AI Voice Studio')
+        return os.path.expanduser('~/Library/Application Support/Audiovane')
     else:
         base = os.environ.get('XDG_DATA_HOME') or os.path.expanduser('~/.local/share')
-        return os.path.join(base, 'AI Voice Studio')
+        return os.path.join(base, 'Audiovane')
 
 if getattr(sys, 'frozen', False):
     _MODELS_BASE = os.path.join(_user_data_dir(), 'models')
@@ -223,7 +228,7 @@ import applog
 import autostart
 
 APP_LOG_PATH = None     # set at startup (see __main__); shown by "Open log"
-APP_NAME    = "AI Voice Studio"
+APP_NAME    = "Audiovane"
 APP_VERSION = "1.1.0"
 SUPPORT_EMAIL = "support.somore100@gmail.com"
 # Relay web app that forwards feedback to SUPPORT_EMAIL (same Google Apps Script relay as
@@ -443,7 +448,7 @@ def _settings_path():
         base = os.path.expanduser("~/Library/Application Support")
     else:
         base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-    return os.path.join(base, "AI Voice Studio", "settings.json")
+    return os.path.join(legacy.migrate_dir(os.path.join(base, "Audiovane")), "settings.json")
 
 def _prefs_path():
     return os.path.join(os.path.dirname(_settings_path()), "prefs.json")
@@ -739,7 +744,7 @@ def show_mic_blocked_dialog(root, reason):
 class AIApp:
     def __init__(self, root):
         self.root = root
-        root.title("AI Voice Studio")
+        root.title("Audiovane")
         root.geometry("820x920")
         root.configure(bg=BG)
         root.resizable(True, True)
@@ -3445,7 +3450,7 @@ def _vosk_download_one(self, code, title):
         for attempt in range(1, 4):
             try:
                 req = urllib.request.Request(
-                    url, headers={"User-Agent": "AI-Voice-Studio"})
+                    url, headers={"User-Agent": "Audiovane"})
                 done = 0
                 total = 0
                 with urllib.request.urlopen(req, timeout=30) as resp, \
@@ -3796,7 +3801,7 @@ _VC_SAME_LANG = "Same as Speech-to-Text tab"
 _VC_AUTO_LANG = "Auto-detect (Whisper only)"
 _VMIC_SINK   = "avs_voice"
 _VMIC_SOURCE = "avs_voice_mic"
-_VMIC_LABEL  = "AI_Voice_Studio_Mic"
+_VMIC_LABEL  = "Audiovane_Mic"
 
 
 def _ext_env():
@@ -4188,7 +4193,7 @@ def _vc_live_loop(self):
             return _PyAudioOut(rate, device)
         cmd = [pacat, "--playback", f"--rate={rate}", "--channels=1",
                "--format=s16le", "--latency-msec=40",
-               "--client-name=AI Voice Studio", "--stream-name=Voice Changer"]
+               "--client-name=Audiovane", "--stream-name=Voice Changer"]
         if device:
             cmd.append(f"--device={device}")
         p = subprocess.Popen(cmd, stdin=subprocess.PIPE, env=_ext_env(),
@@ -4834,7 +4839,7 @@ def _build_api_frame(self):
     r3 = tk.Frame(f, bg=CARD); r3.pack(fill="x", padx=2, pady=3)
     self._label(r3, "When I log in to this computer:").pack(side="left")
     self._login_modes = {"Do nothing": "off",
-                         "Open AI Voice Studio": "window",
+                         "Open Audiovane": "window",
                          "Run in the background (API only, no window)": "background"}
     cur = autostart.get_login_mode()
     self.login_mode_var = tk.StringVar(
@@ -5102,11 +5107,11 @@ def _mcp_command_copy(self):
         argv = [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                              "mcp_server.py")]
     quote = subprocess.list2cmdline if sys.platform == "win32" else shlex.join
-    cmd = "claude mcp add --scope user ai-voice-studio -- " + quote(argv)
+    cmd = "claude mcp add --scope user audiovane -- " + quote(argv)
     self.root.clipboard_clear(); self.root.clipboard_append(cmd); self.root.update()
     print(f"[AVS] MCP command copied: {cmd}", flush=True)
     self._api_status.config(
-        text="Copied. Paste it in a terminal to add AI Voice Studio to Claude Code "
+        text="Copied. Paste it in a terminal to add Audiovane to Claude Code "
              "(other MCP clients: use the same command and arguments).", fg=GREEN)
 
 
@@ -5116,8 +5121,8 @@ def _login_mode_apply(self):
         where = autostart.set_login_mode(mode, script=os.path.abspath(__file__))
         print(f"[AVS] start at login set to '{mode}' ({where})", flush=True)
         msg = {"off": "Will not start at login.",
-               "window": "AI Voice Studio will open when you log in.",
-               "background": "AI Voice Studio will start hidden at login and run the Local API."}[mode]
+               "window": "Audiovane will open when you log in.",
+               "background": "Audiovane will start hidden at login and run the Local API."}[mode]
         self._api_status.config(text=msg, fg=GREEN)
     except Exception as e:
         print(f"[AVS] start at login failed: {e!r}", flush=True)

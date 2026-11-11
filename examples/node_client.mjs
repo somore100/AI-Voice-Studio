@@ -1,4 +1,4 @@
-// AI Voice Studio Local API from Node 18+ / a browser-style fetch. No packages needed.
+// Audiovane Local API from Node 18+ / a browser-style fetch. No packages needed.
 //   AVS_API_KEY=your-key node examples/node_client.mjs
 import { writeFile, readFile } from "node:fs/promises";
 

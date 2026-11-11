@@ -1,6 +1,6 @@
 # ─────────────────────────────────────────────────────────────
-#  AI Voice Studio — Linux PyInstaller spec (for AppImage)
-#  Run with:  python3.10 -m PyInstaller ai_voice_studio_linux.spec
+#  Audiovane — Linux PyInstaller spec (for AppImage)
+#  Run with:  python3.10 -m PyInstaller audiovane_linux.spec
 # ─────────────────────────────────────────────────────────────
 import sys, os
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
@@ -149,7 +149,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='AI_Voice_Studio',
+    name='Audiovane',
     debug=False,
     strip=False,
     upx=False,
@@ -167,5 +167,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name='AI_Voice_Studio',
+    name='Audiovane',
 )

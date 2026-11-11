@@ -1,15 +1,15 @@
 ; =====================================================
-;  AI Voice Studio - PUBLIC INSTALLER v1.0
+;  Audiovane - PUBLIC INSTALLER v1.0
 ;  by domore100
 ;  Fully self-contained - no Python needed by user
 ; =====================================================
 
-#define AppName      "AI Voice Studio"
+#define AppName      "Audiovane"
 #define AppShortName "Local TTS"
 #define AppVersion   "1.1.0"
 #define AppPublisher "domore100"
-#define AppExeName   "AI_Voice_Studio.exe"
-#define AppURL       "https://github.com/somore100/ai-voice-studio"
+#define AppExeName   "Audiovane.exe"
+#define AppURL       "https://github.com/somore100/audiovane"
 
 [Setup]
 AppId={{D4E2A1B3-7F6C-4A8D-9E0B-2C5F8A3D1E7F}
@@ -17,11 +17,11 @@ AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
 AppPublisherURL={#AppURL}
-DefaultDirName={autopf}\AI Voice Studio
+DefaultDirName={autopf}\Audiovane
 DefaultGroupName={#AppName}
 AllowNoIcons=yes
 OutputDir=setup_output
-OutputBaseFilename=AI_Voice_Studio_Setup_v1.0
+OutputBaseFilename=Audiovane_Setup_v1.0
 SetupIconFile=logo.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
@@ -52,7 +52,7 @@ Name: "{app}\models\vosk"
 
 [Files]
 ; Main application
-Source: "dist\AI_Voice_Studio\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dist\Audiovane\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "logo.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "LICENSE.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "download_models.py"; DestDir: "{app}"; Flags: ignoreversion
@@ -82,8 +82,8 @@ Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName} now"; Flags: no
 Type: filesandordirs; Name: "{app}"
 
 [Messages]
-WelcomeLabel1=Welcome to AI Voice Studio
+WelcomeLabel1=Welcome to Audiovane
 WelcomeLabel2=Version {#AppVersion} by {#AppPublisher}%n%nFully offline text-to-speech and speech-to-text.%n%n  Supports Slovenian, English, Russian and more%n  No Python installation required%n  English voices (VCTK) + multilingual XTTS-v2%n  Offline speech recognition via Whisper%n%nNote: Setup downloads ~2.5GB of AI models.%nPlease have internet and 5GB free disk space.%n%nClick Next to continue.
-FinishedLabel=AI Voice Studio has been installed!%n%nDesktop shortcut "Local TTS" has been created.%n%nClick Finish to close.
+FinishedLabel=Audiovane has been installed!%n%nDesktop shortcut "Local TTS" has been created.%n%nClick Finish to close.
 
 [Code]
