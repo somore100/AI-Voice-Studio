@@ -4861,6 +4861,9 @@ def _build_api_frame(self):
                    "It starts at login, not before you sign in.",
                 fg=FG_DIM, font=("Segoe UI", 8), wraplength=640, justify="left").pack(
                     anchor="w", padx=2)
+    self._api_status = tk.Label(f, text="Stopped", bg=CARD, fg=FG_DIM,
+                                font=("Segoe UI", 8), anchor="w", justify="left")
+    self._api_status.pack(fill="x", padx=2, pady=(2, 0))
     self._api = None
     ext = autostart.headless_probe()
     if ext:                       # a background engine (no window) is already serving the API
