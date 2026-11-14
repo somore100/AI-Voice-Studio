@@ -1,6 +1,6 @@
 """Headless engine: run the Local API with no window at all (standard library only).
 
-    AI_Voice_Studio --headless        (alias: --background)
+    Audiovane --headless        (alias: --background)
 
 No Tk window is ever created. A small control port on 127.0.0.1 lets the app (and
 `autostart.headless_stop`) find a running engine and ask it to stop, so opening
@@ -46,7 +46,7 @@ def run(backend, port, token="", control_port=autostart.HEADLESS_PORT, log=print
         return 1
     except OSError as e:
         log(f"[AVS] headless: could not start the Local API on port {port}: {e}. "
-            "Is AI Voice Studio already running its API? Stop it first.", flush=True)
+            "Is Audiovane already running its API? Stop it first.", flush=True)
         ctl.close()
         return 1
     ready.set()

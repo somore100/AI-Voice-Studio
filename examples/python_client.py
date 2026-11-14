@@ -1,4 +1,4 @@
-"""AI Voice Studio Local API: a small client you can copy into your own project.
+"""Audiovane Local API: a small client you can copy into your own project.
 
 Standard library only. It shows the structure that works well:
 
@@ -7,7 +7,7 @@ Standard library only. It shows the structure that works well:
     3. one method per endpoint, errors turned into one exception type,
     4. a pipeline function on top: narrate scenes -> audio files + word timings.
 
-Run the demo (the app, or `AI_Voice_Studio --headless`, must be running):
+Run the demo (the app, or `Audiovane --headless`, must be running):
 
     AVS_API_KEY=your-key python examples/python_client.py
 """
@@ -18,7 +18,7 @@ import urllib.request
 import uuid
 
 
-class VoiceStudioError(Exception):
+class AudiovaneError(Exception):
     """Any problem talking to the API (not running, bad key, bad request...)."""
 
 
@@ -42,9 +42,9 @@ class VoiceStudio:
                 msg = json.loads(e.read())["error"]["message"]
             except Exception:
                 msg = f"HTTP {e.code}"
-            raise VoiceStudioError(msg) from None
+            raise AudiovaneError(msg) from None
         except (urllib.error.URLError, OSError) as e:
-            raise VoiceStudioError(f"AI Voice Studio is not reachable at {self.base} ({e})") from None
+            raise AudiovaneError(f"Audiovane is not reachable at {self.base} ({e})") from None
 
     # ---- discovery -------------------------------------------------------
     def models(self):
@@ -126,5 +126,5 @@ if __name__ == "__main__":
         for r in narrate(studio, scenes, "narration_out", voice=voices[0]["key"] if voices else None,
                          speed=0.95, depth=1.0):
             print("scene", r["scene"], "->", r["wav"], f"({r['words']} words timed)")
-    except VoiceStudioError as e:
-        raise SystemExit(f"Could not use AI Voice Studio: {e}")
+    except AudiovaneError as e:
+        raise SystemExit(f"Could not use Audiovane: {e}")

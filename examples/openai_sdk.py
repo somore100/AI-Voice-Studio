@@ -1,7 +1,7 @@
-"""Use AI Voice Studio through the official OpenAI Python SDK (pip install openai).
+"""Use Audiovane through the official OpenAI Python SDK (pip install openai).
 
 Any tool that lets you set a custom OpenAI base URL works the same way. The SDK sends
-the standard fields; AI Voice Studio's extra ones (pitch, depth, volume, language) go in
+the standard fields; Audiovane's extra ones (pitch, depth, volume, language) go in
 `extra_body`.
 """
 import os

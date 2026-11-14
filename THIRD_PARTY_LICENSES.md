@@ -100,4 +100,4 @@ For more information about any of these licenses, please visit:
 
 ---
 
-*This file was generated to document all third-party libraries and dependencies used in the AI-Voice-Studio project.*
+*This file was generated to document all third-party libraries and dependencies used in the Audiovane project.*

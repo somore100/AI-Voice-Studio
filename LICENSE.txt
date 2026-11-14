@@ -1,4 +1,4 @@
-# AI-Voice-Studio Source-Available License v1.0
+# Audiovane Source-Available License v1.0
 
 Copyright © 2026 somore100. All rights reserved.
 
@@ -6,7 +6,7 @@ Copyright © 2026 somore100. All rights reserved.
 
 In this License:
 
-* **“Software”** means the AI-Voice-Studio source code, documentation, original assets, and other materials distributed by the Copyright Holder under this License.
+* **“Software”** means the Audiovane source code, documentation, original assets, and other materials distributed by the Copyright Holder under this License.
 * **“Copyright Holder”** means the copyright owner of the Software.
 * **“Fork”** means a modified or independently maintained version of the Software.
 * **“Addon”** means a plugin, extension, integration, module, theme, script, or other separate work that extends or interacts with the Software without incorporating a substantial portion of its source code.
@@ -31,25 +31,25 @@ Subject to the restrictions in this License, you are permitted to:
 
 You may **not**, without prior written permission from the Copyright Holder:
 
-1. Sell AI-Voice-Studio itself.
+1. Sell Audiovane itself.
 2. Sell or commercially distribute a Fork that is a Substantially Derived Version.
-3. Rebrand AI-Voice-Studio or a Substantially Derived Version and sell it as a competing product.
-4. Package AI-Voice-Studio itself as a paid downloadable or installable product.
-5. Offer a paid hosted or managed service where AI-Voice-Studio itself, rather than an independent service built around it, is the primary product being sold.
-6. Create a commercial distribution that falsely represents itself as the official AI-Voice-Studio project or as being produced, endorsed, or maintained by the Copyright Holder.
+3. Rebrand Audiovane or a Substantially Derived Version and sell it as a competing product.
+4. Package Audiovane itself as a paid downloadable or installable product.
+5. Offer a paid hosted or managed service where Audiovane itself, rather than an independent service built around it, is the primary product being sold.
+6. Create a commercial distribution that falsely represents itself as the official Audiovane project or as being produced, endorsed, or maintained by the Copyright Holder.
 
-These restrictions do **not** prohibit commercial products that independently use or integrate with AI-Voice-Studio.
+These restrictions do **not** prohibit commercial products that independently use or integrate with Audiovane.
 
 ## 4. Commercial Products and Integrations
 
-Commercial use of AI-Voice-Studio is explicitly permitted.
+Commercial use of Audiovane is explicitly permitted.
 
-You may build, sell, license, host, or otherwise commercially operate a larger product or service that uses AI-Voice-Studio, provided that:
+You may build, sell, license, host, or otherwise commercially operate a larger product or service that uses Audiovane, provided that:
 
-* the larger product provides substantial functionality beyond AI-Voice-Studio itself;
-* AI-Voice-Studio is not simply repackaged and sold as the product;
-* the commercial product does not contain a Substantially Derived Version of AI-Voice-Studio unless permission has been obtained; and
-* the commercial product does not falsely imply that it is the official AI-Voice-Studio product.
+* the larger product provides substantial functionality beyond Audiovane itself;
+* Audiovane is not simply repackaged and sold as the product;
+* the commercial product does not contain a Substantially Derived Version of Audiovane unless permission has been obtained; and
+* the commercial product does not falsely imply that it is the official Audiovane product.
 
 Commercial Addons, plugins, extensions, integrations, and services are permitted when they are sufficiently independent and do not contain a substantial portion of the Software's source code.
 
@@ -73,18 +73,18 @@ You may not remove or alter copyright notices belonging to the Copyright Holder.
 
 ## 7. Name and Branding
 
-The name **“AI-Voice-Studio”**, associated logos, artwork, and official branding are not automatically licensed for use as branding for derivative or competing products.
+The name **“Audiovane”**, associated logos, artwork, and official branding are not automatically licensed for use as branding for derivative or competing products.
 
 You may truthfully describe a project as:
 
-* “based on AI-Voice-Studio”; or
-* “AI-Voice-Studio-compatible”
+* “based on Audiovane”; or
+* “Audiovane-compatible”
 
 provided that such wording does not imply official affiliation, endorsement, or authorship.
 
 ## 8. Third-Party Components
 
-AI-Voice-Studio may use third-party software, libraries, models, model weights, APIs, datasets, or other components.
+Audiovane may use third-party software, libraries, models, model weights, APIs, datasets, or other components.
 
 Such components are **not necessarily covered by this License** and remain subject to their respective licenses and terms.
 
@@ -94,7 +94,7 @@ Users and distributors are responsible for complying with applicable third-party
 
 ## 9. Contributions
 
-Unless a separate written agreement states otherwise, contributions submitted to AI-Voice-Studio are provided under this License.
+Unless a separate written agreement states otherwise, contributions submitted to Audiovane are provided under this License.
 
 By submitting a contribution, you represent that you have the necessary rights to submit the contribution under these terms.
 
@@ -116,15 +116,15 @@ Permissions may be reinstated if the violation is cured and the Copyright Holder
 
 All rights not expressly granted by this License are reserved by the Copyright Holder.
 
-Commercial distribution of AI-Voice-Studio itself or a Substantially Derived Version requires prior written permission from the Copyright Holder.
+Commercial distribution of Audiovane itself or a Substantially Derived Version requires prior written permission from the Copyright Holder.
 
-Commercial use of AI-Voice-Studio as part of an independent larger product or service is permitted under Section 4.
+Commercial use of Audiovane as part of an independent larger product or service is permitted under Section 4.
 
 ## 13. License Status
 
-AI-Voice-Studio is **source-available software** and is **not an OSI-approved Open Source license**.
+Audiovane is **source-available software** and is **not an OSI-approved Open Source license**.
 
-This License is intended to allow people to inspect, learn from, modify, integrate, and build commercial products around AI-Voice-Studio while preventing commercial redistribution of AI-Voice-Studio itself or substantially derived commercial versions without permission.
+This License is intended to allow people to inspect, learn from, modify, integrate, and build commercial products around Audiovane while preventing commercial redistribution of Audiovane itself or substantially derived commercial versions without permission.
 
 ---
 

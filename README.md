@@ -1,16 +1,18 @@
-# AI-Voice-Studio
+# Audiovane
+
+> Formerly *AI Voice Studio*. Settings, models, the API key and the login entry are carried over automatically the first time you open the new version.
 
 **Speak, listen, translate and change your voice - with AI models that run on your own computer.**
 
-AI-Voice-Studio is a desktop app that puts text-to-speech, speech-to-text, subtitles, translation and a live voice changer behind one simple interface. It wraps open-source models, so you do not have to wrestle with each model, its dependencies and its command line separately.
+Audiovane is a desktop app that puts text-to-speech, speech-to-text, subtitles, translation and a live voice changer behind one simple interface. It wraps open-source models, so you do not have to wrestle with each model, its dependencies and its command line separately.
 
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20Linux%20%7C%20macOS-blue)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![License](https://img.shields.io/badge/license-Source--Available%20v1.0-orange)
 ![Status](https://img.shields.io/badge/status-active%20development-green)
-[![Architecture diagram](https://gitdiagram.com/diagram-badge.svg)](https://gitdiagram.com/somore100/ai-voice-studio?utm_source=readme&utm_medium=badge)
+[![Architecture diagram](https://gitdiagram.com/diagram-badge.svg)](https://gitdiagram.com/somore100/audiovane?utm_source=readme&utm_medium=badge)
 
-<img width="817" height="695" alt="AI Voice Studio" src="https://github.com/user-attachments/assets/bda9a7f6-6b42-42c5-9651-b0b3ad299cc3" />
+<img width="817" height="695" alt="Audiovane" src="https://github.com/user-attachments/assets/bda9a7f6-6b42-42c5-9651-b0b3ad299cc3" />
 
 ## ✨ What it does
 
@@ -75,8 +77,8 @@ On first use open **Models & Setup** and download the models you want. They are 
 You need **Python 3.12** plus a few system tools.
 
 ```bash
-git clone https://github.com/somore100/AI-Voice-Studio.git
-cd AI-Voice-Studio
+git clone https://github.com/somore100/Audiovane.git
+cd Audiovane
 python3.12 -m venv venv
 source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements.txt
@@ -92,7 +94,7 @@ System tools:
 | PortAudio | Microphone input |
 | `pactl` / `paplay` (PipeWire or PulseAudio) | The voice changer's virtual microphone on Linux |
 
-Where things live: models are stored in `./models/` when you run from source (packaged Linux builds use `~/.local/share/AI Voice Studio/models`); settings are saved in a small `settings.json` in your user config folder.
+Where things live: models are stored in `./models/` when you run from source (packaged Linux builds use `~/.local/share/Audiovane/models`); settings are saved in a small `settings.json` in your user config folder.
 
 ## 🔌 Local API
 
@@ -112,29 +114,29 @@ Full reference and how to structure an integration: [docs/API.md](docs/API.md); 
 
 Endpoints: `/v1/audio/speech`, `/v1/audio/transcriptions`, `/v1/audio/translations`, `/v1/models`, `/v1/voices`. Extra speech fields: `language`, `speed` (0.25-4), `pitch` (-12 to 12 semitones), `volume` (0-2), `depth` (-8 to 8, positive is deeper). Transcriptions return segment times by default and a `words` list (`word`, `start`, `end`) when you ask for word granularity.
 
-**Start automatically / without a window:** in the Local API section, *Start when the app opens* turns the server on at launch, and *When I log in to this computer* can open the app, or **run the engine in the background with no window at all** (`AI_Voice_Studio --headless`). Open the app any time and its window attaches to the running engine; closing the window leaves the engine running, and *Stop background engine* ends it. This starts at login, not before you sign in. Everything the app prints is also written, with timestamps, to `app.log` in the settings folder (*Open log* button), which is how you check a background run.
+**Start automatically / without a window:** in the Local API section, *Start when the app opens* turns the server on at launch, and *When I log in to this computer* can open the app, or **run the engine in the background with no window at all** (`Audiovane --headless`). Open the app any time and its window attaches to the running engine; closing the window leaves the engine running, and *Stop background engine* ends it. This starts at login, not before you sign in. Everything the app prints is also written, with timestamps, to `app.log` in the settings folder (*Open log* button), which is how you check a background run.
 
 ## 🤖 MCP server (use it from Claude and other AI tools)
 
-`mcp_server.py` lets MCP clients such as Claude Code or Claude Desktop use your local voices: *"say this out loud with AI Voice Studio"*, *"transcribe this recording"*. It is a small bridge to the Local API (no extra pip package), reads the port and key the app saved, and starts the app in the background if it is not running.
+`mcp_server.py` lets MCP clients such as Claude Code or Claude Desktop use your local voices: *"say this out loud with Audiovane"*, *"transcribe this recording"*. It is a small bridge to the Local API (no extra pip package), reads the port and key the app saved, and starts the app in the background if it is not running.
 
 Tools: `speak` (text to a WAV in your output folder, never overwriting), `list_voices`, `transcribe` (optionally with word timestamps), `status`.
 
 Claude Code (run once; use your own paths, and the venv's Python):
 
 ```bash
-claude mcp add ai-voice-studio -- /path/to/ai_voice_studio/venv/bin/python /path/to/ai_voice_studio/mcp_server.py
+claude mcp add audiovane -- /path/to/audiovane/venv/bin/python /path/to/audiovane/mcp_server.py
 ```
 
 **Packaged builds** have it built in: run the app with `--mcp` instead of a script. Easiest: in the app's **Local API** section press **Copy MCP command** and paste it in a terminal. By hand:
 
 ```bash
 # Linux AppImage
-claude mcp add --scope user ai-voice-studio -- /path/to/AI_Voice_Studio.AppImage --mcp
+claude mcp add --scope user audiovane -- /path/to/Audiovane.AppImage --mcp
 # macOS
-claude mcp add --scope user ai-voice-studio -- "/Applications/AI Voice Studio.app/Contents/MacOS/AI_Voice_Studio" --mcp
+claude mcp add --scope user audiovane -- "/Applications/Audiovane.app/Contents/MacOS/Audiovane" --mcp
 # Windows
-claude mcp add --scope user ai-voice-studio -- "C:\Program Files\AI Voice Studio\AI_Voice_Studio.exe" --mcp
+claude mcp add --scope user audiovane -- "C:\Program Files\Audiovane\Audiovane.exe" --mcp
 ```
 
 Optional environment variables: `AVS_API_URL`, `AVS_API_KEY`, `AVS_OUTPUT_DIR`, `AVS_MCP_NO_LAUNCH=1`.
@@ -145,7 +147,7 @@ Check that the Local API, the background engine and the MCP server really work o
 
 ```bash
 python selftest.py                 # from source
-./AI_Voice_Studio.AppImage --selftest      # packaged build (Windows: AI_Voice_Studio.exe --selftest)
+./Audiovane.AppImage --selftest      # packaged build (Windows: Audiovane.exe --selftest)
 ```
 
 It starts a temporary background engine if none is running (and stops it again; it never stops one that was already running), then checks: API reachable, key enforced, voices, speech, **speed / volume / pitch / depth actually change the audio** (length, loudness, pitch, voice depth), a speech-to-text round trip, word timestamps, the MCP handshake, and that the background engine runs without a window, refuses a twin, and stops cleanly. Exit code 1 if anything failed; everything is also written to `app.log`. `--no-mcp` skips the MCP step. It needs the speech and recognition models installed.
@@ -153,11 +155,11 @@ It starts a temporary background engine if none is running (and stops it again; 
 **Testing a downloaded build** (e.g. the CI artifact on Linux), no Python needed:
 
 ```bash
-chmod +x AI_Voice_Studio*.AppImage
-./AI_Voice_Studio*.AppImage --selftest      # packaged app, headless engine and MCP in one go
+chmod +x Audiovane*.AppImage
+./Audiovane*.AppImage --selftest      # packaged app, headless engine and MCP in one go
 ```
 
-On Windows run the same `--selftest` flag from a terminal; on macOS use `"/Applications/AI Voice Studio.app/Contents/MacOS/AI_Voice_Studio" --selftest`. The log is `app.log` in the settings folder (Linux `~/.config/AI Voice Studio/`, macOS `~/Library/Application Support/AI Voice Studio/`, Windows `%APPDATA%\AI Voice Studio\`).
+On Windows run the same `--selftest` flag from a terminal; on macOS use `"/Applications/Audiovane.app/Contents/MacOS/Audiovane" --selftest`. The log is `app.log` in the settings folder (Linux `~/.config/Audiovane/`, macOS `~/Library/Application Support/Audiovane/`, Windows `%APPDATA%\Audiovane\`).
 
 ## 🗂️ Project layout
 
@@ -211,21 +213,21 @@ Contributions are welcome: bug reports, feature ideas, interface and documentati
 
 ## ⚠️ Third-party models and software
 
-AI-Voice-Studio is a wrapper and interface around existing open-source technology. It does not claim ownership of any third-party model, library or dataset. Those components are **not** covered by this project's license and each stays under its own license and terms - see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md). If you redistribute a build, you are responsible for complying with the licenses of everything included in it.
+Audiovane is a wrapper and interface around existing open-source technology. It does not claim ownership of any third-party model, library or dataset. Those components are **not** covered by this project's license and each stays under its own license and terms - see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md). If you redistribute a build, you are responsible for complying with the licenses of everything included in it.
 
 ## 📄 License
 
-AI-Voice-Studio is released under the **AI-Voice-Studio Source-Available License v1.0**. [LICENSE.txt](LICENSE.txt) is the only authoritative text; in short:
+Audiovane is released under the **Audiovane Source-Available License v1.0**. [LICENSE.txt](LICENSE.txt) is the only authoritative text; in short:
 
 * You may view, study, use (personally or commercially) and modify the code.
 * You may create non-commercial forks and independent add-ons.
-* You may build larger commercial products or services that use AI-Voice-Studio as a component, as long as they add substantial functionality of their own.
-* You may **not** sell AI-Voice-Studio itself, sell a substantially derived fork, or rebrand it as a competing product without written permission.
+* You may build larger commercial products or services that use Audiovane as a component, as long as they add substantial functionality of their own.
+* You may **not** sell Audiovane itself, sell a substantially derived fork, or rebrand it as a competing product without written permission.
 * Keep the license and copyright notices, and do not imply official endorsement.
 
 ## 👤 Author
 
-Created and maintained by **somore100**. If you build something interesting with AI-Voice-Studio, feel free to share it!
+Created and maintained by **somore100**. If you build something interesting with Audiovane, feel free to share it!
 
-<img width="817" height="695" alt="AI Voice Studio screenshot" src="https://github.com/user-attachments/assets/8b3a1d86-9509-4504-9222-c439fbe0d950" />
-<img width="817" height="695" alt="AI Voice Studio screenshot" src="https://github.com/user-attachments/assets/a7ccb209-ca22-44ea-b5dd-2b9000b077ae" />
+<img width="817" height="695" alt="Audiovane screenshot" src="https://github.com/user-attachments/assets/8b3a1d86-9509-4504-9222-c439fbe0d950" />
+<img width="817" height="695" alt="Audiovane screenshot" src="https://github.com/user-attachments/assets/a7ccb209-ca22-44ea-b5dd-2b9000b077ae" />

@@ -1,8 +1,8 @@
 [Desktop Entry]
-Name=AI Voice Studio
+Name=Audiovane
 Comment=Offline TTS/STT/Translator desktop app
-Exec=AI_Voice_Studio
-Icon=ai-voice-studio
+Exec=Audiovane
+Icon=audiovane
 Type=Application
 Categories=AudioVideo;Audio;Utility;
 Terminal=false

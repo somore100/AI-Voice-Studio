@@ -16,8 +16,8 @@ import subprocess
 import sys
 import threading
 
-APP_ID = "ai-voice-studio"
-APP_TITLE = "AI Voice Studio"
+APP_ID = "audiovane"
+APP_TITLE = "Audiovane"
 BACKGROUND_FLAG = "--headless"                  # engine only, no window
 LEGACY_FLAGS = ("--background",)                # older login entries; treated as --headless
 INSTANCE_PORT = 47653           # loopback only; used to raise the already-running app
@@ -69,8 +69,47 @@ def _is_bg(where):
     return any(f in where for f in (BACKGROUND_FLAG,) + LEGACY_FLAGS)
 
 
+def _legacy_login():
+    """Login entry made under the old name ("AI Voice Studio"). Returns its mode
+    ("window"/"background") and removes it, or None if there is none."""
+    mode = None
+    try:
+        if sys.platform.startswith("linux"):
+            base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+            path = os.path.join(base, "autostart", "ai-voice-studio.desktop")
+            with open(path, encoding="utf-8") as f:
+                txt = f.read()
+            if "X-GNOME-Autostart-enabled=false" not in txt and "Hidden=true" not in txt:
+                line = next((ln for ln in txt.splitlines() if ln.startswith("Exec=")), "")
+                mode = "background" if _is_bg(line) else "window"
+            _rm(path)
+        elif sys.platform == "darwin":
+            import plistlib
+            path = os.path.expanduser("~/Library/LaunchAgents/com.somore100.ai-voice-studio.plist")
+            with open(path, "rb") as f:
+                args = plistlib.load(f).get("ProgramArguments", [])
+            mode = "background" if _is_bg(args) else "window"
+            _rm(path)
+        elif sys.platform == "win32":
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _WIN_KEY, 0,
+                                winreg.KEY_READ | winreg.KEY_SET_VALUE) as k:
+                val = winreg.QueryValueEx(k, "AI Voice Studio")[0]
+                mode = "background" if _is_bg(val) else "window"
+                winreg.DeleteValue(k, "AI Voice Studio")
+    except (OSError, ValueError, ImportError):
+        pass
+    return mode
+
+
 def get_login_mode():
     """Reads the real OS state: "off" | "window" | "background"."""
+    old = _legacy_login()
+    if old:                                       # renamed app: carry the choice over
+        try:
+            set_login_mode(old)
+        except OSError:
+            pass
     try:
         if sys.platform.startswith("linux"):
             with open(_linux_file(), encoding="utf-8") as f:

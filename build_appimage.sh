@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────
-#  AI Voice Studio — Linux AppImage build script
+#  Audiovane — Linux AppImage build script
 #
 #  Prereqs (one-time):
 #    - Working venv per README (python3.10 -m venv venv --system-site-packages)
@@ -16,7 +16,7 @@ set -e
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$BASE_DIR"
 
-APP_NAME="AI_Voice_Studio"
+APP_NAME="Audiovane"
 DIST_DIR="$BASE_DIR/dist/$APP_NAME"
 APPDIR="$BASE_DIR/AppDir"
 TOOLS_DIR="$BASE_DIR/.appimage_tools"
@@ -25,7 +25,7 @@ echo "── Step 1: Patch TTS for PyInstaller ───────────
 python patch_tts_for_pyinstaller.py
 
 echo "── Step 2: PyInstaller build ─────────────────────────────"
-python -m PyInstaller ai_voice_studio_linux.spec --clean --noconfirm
+python -m PyInstaller audiovane_linux.spec --clean --noconfirm
 
 if [ ! -f "$DIST_DIR/$APP_NAME" ]; then
     echo "ERROR: PyInstaller output not found at $DIST_DIR/$APP_NAME"
@@ -59,8 +59,8 @@ mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
 cp -r "$DIST_DIR/." "$APPDIR/usr/bin/"
 
 # Desktop entry (linuxdeploy also wants a copy at the AppDir root)
-cp "$BASE_DIR/ai-voice-studio.desktop" "$APPDIR/usr/share/applications/"
-cp "$BASE_DIR/ai-voice-studio.desktop" "$APPDIR/"
+cp "$BASE_DIR/audiovane.desktop" "$APPDIR/usr/share/applications/"
+cp "$BASE_DIR/audiovane.desktop" "$APPDIR/"
 
 # Resize icon to a valid square resolution (linuxdeploy rejects arbitrary sizes like 1920px)
 if ! command -v convert &>/dev/null; then
@@ -68,8 +68,8 @@ if ! command -v convert &>/dev/null; then
     sudo apt-get install -y imagemagick
 fi
 convert "$BASE_DIR/logo.png" -resize 256x256 -gravity center -background none -extent 256x256 "$BASE_DIR/icon_256.png"
-cp "$BASE_DIR/icon_256.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/ai-voice-studio.png"
-cp "$BASE_DIR/icon_256.png" "$APPDIR/ai-voice-studio.png"
+cp "$BASE_DIR/icon_256.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/audiovane.png"
+cp "$BASE_DIR/icon_256.png" "$APPDIR/audiovane.png"
 
 echo "── Step 5: Run linuxdeploy to bundle shared libs + build AppImage ─"
 export NO_STRIP=1   # keep symbols; some torch/numpy .so files break if stripped
@@ -77,7 +77,7 @@ export ARCH=x86_64  # appimagetool can't reliably auto-detect arch with mixed ML
 "$LINUXDEPLOY" \
     --appdir "$APPDIR" \
     --executable "$APPDIR/usr/bin/$APP_NAME" \
-    --desktop-file "$BASE_DIR/ai-voice-studio.desktop" \
+    --desktop-file "$BASE_DIR/audiovane.desktop" \
     --icon-file "$BASE_DIR/icon_256.png" \
     --output appimage
 

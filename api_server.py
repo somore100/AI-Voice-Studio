@@ -368,9 +368,9 @@ def _status_page(api):
     base = f"http://127.0.0.1:{api.port}/v1"
     key = ("Required: send <code>Authorization: Bearer YOUR_KEY</code> (copy it from the app)"
            if api.token else "<b>Not set</b> (any program on this computer can use the API)")
-    return f"""<!doctype html><meta charset="utf-8"><title>AI Voice Studio API</title>
+    return f"""<!doctype html><meta charset="utf-8"><title>Audiovane API</title>
 <body style="font-family:system-ui;background:#1a1b26;color:#c0caf5;max-width:640px;margin:40px auto;padding:0 16px">
-<h2 style="color:#9ece6a">&#10003; AI Voice Studio API is running</h2>
+<h2 style="color:#9ece6a">&#10003; Audiovane API is running</h2>
 <p>Base URL: <code>{base}</code><br>API key: {key}</p>
 <ul><li><code>POST /v1/audio/speech</code> &ndash; text to speech</li>
 <li><code>POST /v1/audio/transcriptions</code> &ndash; speech to text</li>
@@ -480,7 +480,7 @@ class ApiServer:
 
         class Handler(BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
-            server_version = "AIVoiceStudio"
+            server_version = "Audiovane"
             sys_version = ""
             timeout = SOCKET_TIMEOUT             # idle read timeout on the socket
 
@@ -576,14 +576,14 @@ class ApiServer:
                 if not self._guard(public=path in ("", "/health")): return
                 try:
                     if path == "/health":
-                        self._send(200, {"status": "ok", "app": "AI Voice Studio"})
+                        self._send(200, {"status": "ok", "app": "Audiovane"})
                     elif path == "":
                         self._send(200, _status_page(api), "text/html; charset=utf-8")
                     elif path == "/v1/models":
                         m = api.backend.models()
-                        data = [{"id": i, "object": "model", "owned_by": "ai-voice-studio",
+                        data = [{"id": i, "object": "model", "owned_by": "audiovane",
                                  "capabilities": "tts"} for i in m.get("tts", [])]
-                        data += [{"id": i, "object": "model", "owned_by": "ai-voice-studio",
+                        data += [{"id": i, "object": "model", "owned_by": "audiovane",
                                   "capabilities": "stt"} for i in m.get("stt", [])]
                         self._send(200, {"object": "list", "data": data})
                     elif path in ("/v1/voices", "/voices"):

@@ -1,7 +1,7 @@
-"""End-to-end self-test for AI Voice Studio's Local API and MCP server.
+"""End-to-end self-test for Audiovane's Local API and MCP server.
 
     python selftest.py              # from source (starts the app in the background if needed)
-    AI_Voice_Studio --selftest      # packaged build, any platform
+    Audiovane --selftest      # packaged build, any platform
     ... [--no-mcp]                  # skip the MCP handshake step
 
 Prints PASS / FAIL / SKIP per step and exits 1 if anything failed. It needs the
@@ -158,7 +158,7 @@ class Report:
 def run(with_mcp=True, out=print):
     """Runs every check, reporting each line through `out`. Returns 0 (all passed) or 1."""
     rep, ctx = Report(out), {}
-    out(f"AI Voice Studio self-test  ->  {M.api_base()}")
+    out(f"Audiovane self-test  ->  {M.api_base()}")
 
     def api_up():
         try:
@@ -334,7 +334,7 @@ def run(with_mcp=True, out=print):
                     return json.loads(p.stdout.readline())
                 init = rpc(1, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
                                              "clientInfo": {"name": "selftest", "version": "1"}})
-                assert init["result"]["serverInfo"]["name"] == "ai-voice-studio", "bad handshake"
+                assert init["result"]["serverInfo"]["name"] == "audiovane", "bad handshake"
                 names = {t["name"] for t in rpc(2, "tools/list")["result"]["tools"]}
                 assert {"speak", "list_voices", "transcribe", "status"} <= names, f"tools: {names}"
                 r = rpc(3, "tools/call", {"name": "status", "arguments": {}})["result"]

@@ -1,7 +1,7 @@
-"""MCP server for AI Voice Studio (standard library only).
+"""MCP server for Audiovane (standard library only).
 
 Lets Claude Code, Claude Desktop and other MCP clients use this app's voices and
-speech recognition: "say that out loud with AI Voice Studio", "transcribe this
+speech recognition: "say that out loud with Audiovane", "transcribe this
 recording". It is a thin bridge to the app's Local API, so the app has to be
 running with the API on. If it is not, this server starts it in the background
 (`main.py --headless`: engine and API, no window) when it can.
@@ -9,18 +9,19 @@ running with the API on. If it is not, this server starts it in the background
 Run (the client launches it for you):
 
     /path/to/venv/bin/python /path/to/mcp_server.py        # from source
-    AI_Voice_Studio.AppImage --mcp                         # packaged build (any platform)
+    Audiovane.AppImage --mcp                         # packaged build (any platform)
 
 Settings (all optional; by default it reads the port and key the app saved):
     AVS_API_URL         e.g. http://127.0.0.1:8765/v1
     AVS_API_KEY         the API key, if you set one
     AVS_OUTPUT_DIR      where speak() saves audio (default: the app's output folder,
-                        else ~/Documents/AI Voice Studio)
+                        else ~/Documents/Audiovane)
     AVS_MCP_NO_LAUNCH=1 never start the app automatically
 
 stdout carries the protocol, so everything diagnostic goes to stderr.
 """
 import json
+import legacy
 import os
 import re
 import subprocess
@@ -32,7 +33,7 @@ import urllib.request
 import uuid
 import wave
 
-SERVER_NAME = "ai-voice-studio"
+SERVER_NAME = "audiovane"
 SERVER_VERSION = "1.0.0"
 SUPPORTED_PROTOCOLS = ("2025-06-18", "2025-03-26", "2024-11-05")
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -51,11 +52,11 @@ def settings_dir():
         base = os.path.expanduser("~/Library/Application Support")
     else:
         base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-    return os.path.join(base, "AI Voice Studio")
+    return legacy.migrate_dir(os.path.join(base, "Audiovane"))
 
 
 def app_command(flag):
-    """argv that starts AI Voice Studio with `flag` (--headless, --mcp ...), or None.
+    """argv that starts Audiovane with `flag` (--headless, --mcp ...), or None.
     AVS_APP_CMD overrides the program (for development and tests)."""
     override = os.environ.get("AVS_APP_CMD")
     if override:
@@ -106,8 +107,8 @@ def _request(method, path, body=None, headers=None, timeout=300):
             msg = f"HTTP {e.code}"
         if e.code == 401:
             msg += (" Set AVS_API_KEY for this MCP server, or copy the key from "
-                    "AI Voice Studio's Local API section.")
-        raise ToolError(f"AI Voice Studio API: {msg}")
+                    "Audiovane's Local API section.")
+        raise ToolError(f"Audiovane API: {msg}")
     except (urllib.error.URLError, ConnectionError, OSError) as e:
         raise ConnectionError(str(e))
 
@@ -124,11 +125,11 @@ def ensure_running():
         pass
     cmd = app_command("--headless")
     if os.environ.get("AVS_MCP_NO_LAUNCH") or cmd is None:
-        raise ToolError("AI Voice Studio is not running. Open it and press 'Start API server' "
+        raise ToolError("Audiovane is not running. Open it and press 'Start API server' "
                         "in the Local API section (or set it to run in the background at login).")
     workdir = HERE if os.environ.get("AVS_APP_CMD") or not getattr(sys, "frozen", False) \
         else os.path.dirname(os.path.abspath(cmd[0]))
-    log("API not reachable - starting AI Voice Studio in the background")
+    log("API not reachable - starting Audiovane in the background")
     _SPAWNED.append(subprocess.Popen(cmd, cwd=workdir, stdin=subprocess.DEVNULL,
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                      start_new_session=(os.name != "nt")))
@@ -141,7 +142,7 @@ def ensure_running():
             return
         except ConnectionError:
             continue
-    raise ToolError("Started AI Voice Studio but its Local API did not come up. Open the app "
+    raise ToolError("Started Audiovane but its Local API did not come up. Open the app "
                     "and press 'Start API server' (if the app was already open, its API may be off).")
 
 
@@ -153,7 +154,7 @@ def call(method, path, **kw):
 # ── tools ─────────────────────────────────────────────────────────────────
 def _output_dir():
     d = (os.environ.get("AVS_OUTPUT_DIR") or _prefs().get("last_folder")
-         or os.path.join(os.path.expanduser("~/Documents"), "AI Voice Studio"))
+         or os.path.join(os.path.expanduser("~/Documents"), "Audiovane"))
     os.makedirs(d, exist_ok=True)
     return d
 
@@ -171,7 +172,7 @@ def tool_status(args):
     models = json.loads(call("GET", "/models"))["data"]
     tts = [m["id"] for m in models if m.get("capabilities") == "tts"]
     stt = [m["id"] for m in models if m.get("capabilities") == "stt"]
-    return (f"AI Voice Studio is running at {api_base()}\n"
+    return (f"Audiovane is running at {api_base()}\n"
             f"Speech engines: {', '.join(tts) or 'none installed'}\n"
             f"Recognition models: {', '.join(stt) or 'none installed'}\n"
             f"Audio is saved to: {_output_dir()}")
@@ -262,7 +263,7 @@ def tool_transcribe(args):
 
 TOOLS = {
     "speak": (tool_speak,
-              "Turn text into speech with AI Voice Studio's local voices and save it as a WAV file. "
+              "Turn text into speech with Audiovane's local voices and save it as a WAV file. "
               "Returns the file path.",
               {"text": {"type": "string", "description": "What to say."},
                "voice": {"type": "string", "description": "Voice key from list_voices, e.g. 'kokoro:af_heart'. Optional."},
@@ -287,7 +288,7 @@ TOOLS = {
                     "word_timestamps": {"type": "boolean", "description": "Include start/end time for every word."}},
                    ["path"]),
     "status": (tool_status,
-               "Check that AI Voice Studio is running and see which engines and models are installed.",
+               "Check that Audiovane is running and see which engines and models are installed.",
                {}, []),
 }
 

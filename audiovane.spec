@@ -1,34 +1,47 @@
 # ─────────────────────────────────────────────────────────────
-#  AI Voice Studio — macOS PyInstaller spec
-#  Run with:  python3.12 -m PyInstaller ai_voice_studio_macos.spec
+#  Audiovane — PyInstaller spec file
+#  Run with:  py -3.10 -m PyInstaller audiovane.spec
 # ─────────────────────────────────────────────────────────────
-import os
+import sys, os
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
+
+# Read console preference set by build_exe.bat
+_show_console = os.environ.get("AVS_CONSOLE", "0") == "1"
 
 block_cipher = None
 
+# ── Find vosk package directory so we can bundle its DLLs ────
 import vosk as _vosk_pkg
 _vosk_dir = os.path.dirname(_vosk_pkg.__file__)
 
+# ── Collect vosk DLLs and data files ─────────────────────────
 _vosk_binaries = []
 for f in os.listdir(_vosk_dir):
     full = os.path.join(_vosk_dir, f)
     if f.endswith(('.dll', '.so', '.dylib')) and os.path.isfile(full):
         _vosk_binaries.append((full, 'vosk'))
 
+# Also bundle the entire vosk package folder as data
+# (vosk.__init__ does os.add_dll_directory on its own folder)
 _vosk_datas = [(os.path.join(_vosk_dir, f), 'vosk')
                for f in os.listdir(_vosk_dir)
                if os.path.isfile(os.path.join(_vosk_dir, f))]
 
+# ── Collect numpy DLLs (fixes Windows DLL load error) ───────
 try:
+    from PyInstaller.utils.hooks import collect_dynamic_libs, collect_data_files
     _numpy_bins = collect_dynamic_libs('numpy')
     _numpy_datas = collect_data_files('numpy')
+    print(f"numpy binaries found: {len(_numpy_bins)}")
+    print(f"numpy datas found: {len(_numpy_datas)}")
 except Exception as e:
     print(f"numpy collection error: {e}")
     _numpy_bins = []
     _numpy_datas = []
 
+# ── Collect TTS data files ───────────────────────────────────
 try:
+    from PyInstaller.utils.hooks import collect_data_files
     _tts_datas = collect_data_files('TTS')
 except Exception:
     _tts_datas = []
@@ -40,16 +53,22 @@ except Exception:
 # dependency, reached during TTS's own import chain) fails with
 # FileNotFoundError: .../gruut/VERSION
 try:
+    from PyInstaller.utils.hooks import collect_data_files
     _gruut_datas = collect_data_files('gruut')
 except Exception:
     _gruut_datas = []
 
+# ── Collect trainer data files ───────────────────────────────
 try:
     _trainer_datas = collect_data_files('trainer')
 except Exception:
     _trainer_datas = []
 
 # ── Collect torch/torchaudio fully (binaries + datas + submodules) ──
+# Relying on the automatic PyInstaller torch hook alone can miss native
+# runtime libs (OpenMP/MKL etc.), causing "partially initialized module
+# 'torch' has no attribute X" crashes at runtime. collect_all grabs
+# everything torch ships, at the cost of a larger bundle.
 from PyInstaller.utils.hooks import collect_all
 _torch_datas, _torch_bins, _torch_hidden = collect_all('torch')
 try:
@@ -65,6 +84,7 @@ try:
 except Exception:
     _tf_datas, _tf_bins, _tf_hidden = [], [], []
 
+# ── Models folder (optional) ─────────────────────────────────
 _model_datas = [('models', 'models')] if os.path.isdir('models') else []
 
 # ── Kokoro TTS (kokoro-onnx): ONNX Runtime binaries, espeak-ng loader
@@ -96,6 +116,10 @@ a = Analysis(
         'TTS.tts.layers', 'TTS.utils.audio', 'TTS.utils.io',
         'TTS.config', 'TTS.encoder', 'TTS.vocoder',
         'coqpit', 'trainer',
+        'TTS.tts.configs', 'TTS.tts.models', 'TTS.tts.utils',
+        'TTS.tts.layers', 'TTS.utils.audio', 'TTS.utils.io',
+        'TTS.config', 'TTS.encoder', 'TTS.vocoder',
+        'coqpit', 'trainer',
         'TTS.tts.models.xtts', 'TTS.utils', 'TTS.vocoder',
         'whisper', 'whisper.audio', 'whisper.decoding',
         'whisper.model', 'whisper.tokenizer', 'whisper.transcribe',
@@ -105,7 +129,7 @@ a = Analysis(
         'numpy', 'librosa', 'scipy', 'sklearn',
         'tkinter', 'tkinter.ttk', 'tkinter.filedialog', 'tkinter.messagebox',
         'backports', 'backports.tarfile', 'jaraco', 'jaraco.text', 'jaraco.context', 'jaraco.functools',
-        'numpy.core', 'numpy.core._multiarray_umath', 'numpy.core._multiarray_tests',
+        'numpy', 'numpy.core', 'numpy.core._multiarray_umath', 'numpy.core._multiarray_tests',
         'numpy.linalg', 'numpy.linalg._umath_linalg', 'numpy.fft', 'numpy.random',
     ],
     hookspath=[],
@@ -145,13 +169,14 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='AI_Voice_Studio',
+    name='Audiovane',
     debug=False,
     strip=False,
     upx=False,
-    console=False,
+    console=_show_console,
     disable_windowed_traceback=False,
     target_arch=None,
+    icon='logo.ico',
 )
 
 coll = COLLECT(
@@ -162,17 +187,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name='AI_Voice_Studio',
-)
-
-# BUNDLE wraps the COLLECT output into a proper macOS .app
-app = BUNDLE(
-    coll,
-    name='AI Voice Studio.app',
-    icon=None,   # add 'logo.icns' here once a proper .icns icon exists
-    bundle_identifier='com.domore100.aivoicestudio',
-    info_plist={
-        'NSMicrophoneUsageDescription': 'AI Voice Studio needs microphone access for Speech-to-Text.',
-        'CFBundleShortVersionString': '1.1.0',
-    },
+    name='Audiovane',
 )
